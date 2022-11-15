@@ -207,8 +207,11 @@ private:
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_;
   ObLoadRowCaster row_caster_;
+  int thread_idx_;
   ObLoadExternalSort external_sort_;
   ObLoadSSTableWriter sstable_writer_;
+  ObIArray<ObLoadDataStmt::FieldOrVarStruct> *field_or_var_list_;
+  const ObTableSchema *table_schema_ = nullptr;
 };
 
 } // namespace sql
