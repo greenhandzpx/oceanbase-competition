@@ -8,6 +8,9 @@
 #include "storage/tablet/ob_tablet_create_delete_helper.h"
 #include "storage/tx_storage/ob_ls_service.h"
 
+
+#include "lib/time/ob_time_utility.h"
+
 namespace oceanbase
 {
 namespace sql
@@ -966,6 +969,10 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 
 int ObLoadDataDirectDemo::do_load()
 {
+  int64_t do_sort_time = 0;
+
+  int64_t casted_time = 0;
+
   int ret = OB_SUCCESS;
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
@@ -995,18 +1002,26 @@ int ObLoadDataDirectDemo::do_load()
             ret = OB_SUCCESS;
             break;
           }
-        } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
-          LOG_WARN("fail to cast row", KR(ret));
-        } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
-          LOG_WARN("fail to append row", KR(ret));
+        } else {
+            int64_t start_ts = ObTimeUtility::current_time_ns();
+            if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
+              LOG_WARN("fail to cast row", KR(ret));
+            } else {
+              casted_time += (ObTimeUtility::current_time_ns() - start_ts);
+              if (OB_FAIL(external_sort_.append_row(*datum_row))) {
+                LOG_WARN("fail to append row", KR(ret));
+              }
+            }
         }
       }
     }
   }
   if (OB_SUCC(ret)) {
+    int64_t start_ts = ObTimeUtility::current_time_ns();
     if (OB_FAIL(external_sort_.close())) {
       LOG_WARN("fail to close external sort", KR(ret));
     }
+    do_sort_time += (ObTimeUtility::current_time_ns() - start_ts);
   }
   while (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
@@ -1025,6 +1040,9 @@ int ObLoadDataDirectDemo::do_load()
       LOG_WARN("fail to close sstable writer", KR(ret));
     }
   }
+
+  LOG_INFO("do sort time :", LITERAL_K(do_sort_time));
+  LOG_INFO("casted time :", LITERAL_K(casted_time));
   return ret;
 }
 
