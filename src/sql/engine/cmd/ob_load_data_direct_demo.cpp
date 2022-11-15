@@ -8,6 +8,10 @@
 #include "storage/tablet/ob_tablet_create_delete_helper.h"
 #include "storage/tx_storage/ob_ls_service.h"
 
+#include "lib/thread/thread.h"
+#include "lib/lock/ob_mutex.h"
+#include "lib/container/ob_vector.h"
+
 namespace oceanbase
 {
 namespace sql
@@ -966,7 +970,51 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 
 int ObLoadDataDirectDemo::do_load()
 {
+
+
   int ret = OB_SUCCESS;
+
+  ObMutex ob_mutex1;
+  ObMutex ob_mutex2;
+
+  auto read_and_append = [&ret, &ob_mutex1, &ob_mutex2, this](){
+
+    const ObNewRow *new_row = nullptr;
+    const ObLoadDatumRow *datum_row = nullptr;
+
+    while (true) {
+      ob_mutex1.lock();
+      if (!OB_SUCC(ret)) {
+        ob_mutex1.unlock();
+        break;
+      }
+      if (OB_FAIL(this->csv_parser_.get_next_row(this->buffer_, new_row))) {
+        if (OB_UNLIKELY(OB_ITER_END != ret)) {
+          LOG_WARN("fail to get next row", KR(ret));
+        } else {
+          // ret = OB_SUCCESS;
+        }
+        ob_mutex1.unlock();
+        break;
+      } else {
+        ob_mutex1.unlock();
+        int ret2 = OB_SUCCESS;
+        if (OB_UNLIKELY(common::OB_SUCCESS != (ret2 = this->row_caster_.get_casted_row(*new_row, datum_row)))) {
+          LOG_WARN("fail to cast row", KR(ret2));
+          break;
+        } else {
+          ob_mutex2.lock();
+          if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
+            LOG_WARN("fail to append row", KR(ret));
+          }
+          ob_mutex2.unlock();
+        }
+      }
+    }
+  };
+
+  
+
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
   while (OB_SUCC(ret)) {
@@ -987,20 +1035,30 @@ int ObLoadDataDirectDemo::do_load()
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("unexpected empty buffer", KR(ret));
     } else {
-      while (OB_SUCC(ret)) {
-        if (OB_FAIL(csv_parser_.get_next_row(buffer_, new_row))) {
-          if (OB_UNLIKELY(OB_ITER_END != ret)) {
-            LOG_WARN("fail to get next row", KR(ret));
-          } else {
-            ret = OB_SUCCESS;
-            break;
-          }
-        } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
-          LOG_WARN("fail to cast row", KR(ret));
-        } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
-          LOG_WARN("fail to append row", KR(ret));
-        }
+
+      ObVector<Thread> threads(THREAD_NUM);
+      for (int i = 0; i < THREAD_NUM; ++i) {
+        threads[i].start(read_and_append);
       }
+
+      for (int i = 0; i < THREAD_NUM; ++i) {
+        threads[i].wait();
+      }
+
+      // while (OB_SUCC(ret)) {
+      //   if (OB_FAIL(csv_parser_.get_next_row(buffer_, new_row))) {
+      //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
+      //       LOG_WARN("fail to get next row", KR(ret));
+      //     } else {
+      //       ret = OB_SUCCESS;
+      //       break;
+      //     }
+      //   } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
+      //     LOG_WARN("fail to cast row", KR(ret));
+      //   } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
+      //     LOG_WARN("fail to append row", KR(ret));
+      //   }
+      // }
     }
   }
   if (OB_SUCC(ret)) {

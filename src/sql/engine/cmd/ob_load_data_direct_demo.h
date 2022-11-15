@@ -13,6 +13,8 @@ namespace oceanbase
 namespace sql
 {
 
+#define THREAD_NUM 4
+
 class ObLoadDataBuffer
 {
 public:
@@ -192,7 +194,7 @@ private:
 class ObLoadDataDirectDemo : public ObLoadDataBase
 {
   static const int64_t MEM_BUFFER_SIZE = (1LL << 30); // 1G
-  static const int64_t FILE_BUFFER_SIZE = (2LL << 20); // 2M
+  static const int64_t FILE_BUFFER_SIZE = (20LL << 20); // 2M
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
