@@ -203,15 +203,17 @@ private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
 private:
-  ObLoadCSVPaser csv_parser_;
+  ObLoadCSVPaser csv_parser_[THREAD_NUM];
   ObLoadSequentialFileReader file_reader_;
-  ObLoadDataBuffer buffer_;
-  ObLoadRowCaster row_caster_;
+  ObLoadDataBuffer buffer_[THREAD_NUM];
+  ObLoadRowCaster row_caster_[THREAD_NUM];
   int thread_idx_;
   ObLoadExternalSort external_sort_;
   ObLoadSSTableWriter sstable_writer_;
   ObIArray<ObLoadDataStmt::FieldOrVarStruct> *field_or_var_list_;
+  const ObLoadArgument *load_args_ = nullptr;
   const ObTableSchema *table_schema_ = nullptr;
+  const ObLoadDataStmt *load_stmt_;
 };
 
 } // namespace sql
