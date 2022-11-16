@@ -1045,7 +1045,7 @@ int ObLoadDataDirectDemo::do_load()
           }
           ret_global = ret;
           ob_mutex1.unlock();
-          // ret = OB_SUCCESS;
+          ret = OB_SUCCESS;
           break;
         }
       } else if (OB_UNLIKELY(this->buffer_[thread_idx].empty())) {
@@ -1054,6 +1054,8 @@ int ObLoadDataDirectDemo::do_load()
         LOG_WARN("unexpected empty buffer", KR(ret));
         ob_mutex1.unlock();
       } else {
+        LOG_INFO("read next buffer successfully");
+
         ob_mutex1.unlock();
 
         while (OB_SUCC(ret)) {
@@ -1064,6 +1066,9 @@ int ObLoadDataDirectDemo::do_load()
               ob_mutex1.lock();
               ret_global = ret;
               ob_mutex1.unlock();
+            } else {
+              ret = OB_SUCCESS;
+              break;
             }
           } else {
             if (OB_FAIL(this->row_caster_[thread_idx].get_casted_row(*new_row, datum_row))) {
@@ -1074,11 +1079,16 @@ int ObLoadDataDirectDemo::do_load()
               break;
             } else {
               ob_mutex2.lock();
+              LOG_INFO("cast next row successfully");
               if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
+                ob_mutex2.unlock();
+                ob_mutex1.lock();
                 ret_global = ret;
+                ob_mutex1.unlock();
+              } else {
+                ob_mutex2.unlock();
               }
-              ob_mutex2.unlock();
             }
           }
 
