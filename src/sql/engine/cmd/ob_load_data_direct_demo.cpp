@@ -1008,6 +1008,7 @@ int ObLoadDataDirectDemo::do_load()
               LOG_WARN("fail to cast row", KR(ret));
             } else {
               casted_time += (ObTimeUtility::current_time_ns() - start_ts);
+              LOG_INFO("append a row to ext sort");
               if (OB_FAIL(external_sort_.append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
               }
