@@ -15,6 +15,8 @@ namespace sql
 
 #define THREAD_NUM 1
 
+#define DATUM_BUFFER_SIZE 16
+
 class ObLoadDataBuffer
 {
 public:

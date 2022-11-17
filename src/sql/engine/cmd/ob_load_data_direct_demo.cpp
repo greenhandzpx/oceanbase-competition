@@ -9,6 +9,7 @@
 #include "storage/tx_storage/ob_ls_service.h"
 
 #include "lib/thread/thread.h"
+#include "lib/lock/ob_thread_cond.h"
 #include "lib/lock/ob_mutex.h"
 #include "lib/container/ob_vector.h"
 
@@ -1007,7 +1008,12 @@ int ObLoadDataDirectDemo::do_load()
   ObMutex ob_mutex1;
   ObMutex ob_mutex2;
 
-  auto read_and_append = [&thread_idx_global, &ret_global, &ob_mutex1, &ob_mutex2, this](){
+  ObThreadCond ob_cond_consumer;
+  ob_cond_consumer.init(0);
+  ObVector<ObLoadDatumRow *> datum_row_buf;
+
+
+  auto read_and_append = [&ob_cond_consumer, &datum_row_buf, &thread_idx_global, &ret_global, &ob_mutex1, this](){
 
     // thread private variable
     int ret = OB_SUCCESS;
@@ -1078,23 +1084,39 @@ int ObLoadDataDirectDemo::do_load()
               ob_mutex1.unlock();
               break;
             } else {
-              ob_mutex2.lock();
-              LOG_INFO("cast next row successfully");
-              if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
-                LOG_WARN("fail to append row", KR(ret));
-                ob_mutex2.unlock();
-                ob_mutex1.lock();
-                ret_global = ret;
-                ob_mutex1.unlock();
-              } else {
-                ob_mutex2.unlock();
+
+              ob_cond_consumer.lock();
+              while (datum_row_buf.size() == DATUM_BUFFER_SIZE) {
+                ob_cond_consumer.wait(10000);
               }
+              datum_row_buf.push_back(datum_row);
+              ob_cond_consumer.broadcast();
+              ob_cond_consumer.unlock();
+
+              // LOG_INFO("cast next row successfully");
+              // if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
+              //   LOG_WARN("fail to append row", KR(ret));
+              //   ob_mutex2.unlock();
+              //   ob_mutex1.lock();
+              //   ret_global = ret;
+              //   ob_mutex1.unlock();
+              // } else {
+              //   ob_mutex2.unlock();
+              // }
             }
           }
 
         }
       }
     }
+
+    ob_cond_consumer.lock();
+    while (datum_row_buf.size() == DATUM_BUFFER_SIZE) {
+      ob_cond_consumer.wait(10000);
+    }
+    datum_row_buf.push_back(nullptr);
+    ob_cond_consumer.broadcast();
+    ob_cond_consumer.unlock();
 
   };
 
@@ -1105,12 +1127,46 @@ int ObLoadDataDirectDemo::do_load()
     threads[i].start(read_and_append);
   }
 
+  const ObNewRow *new_row = nullptr;
+  ObLoadDatumRow *datum_row = nullptr;
+  int ret = OB_SUCCESS;
+
+  int cnt = 0;
+  while (true) {
+    ob_cond_consumer.lock();
+    while (datum_row_buf.size() == 0) {
+      ob_cond_consumer.wait();
+    }
+    datum_row = *(datum_row_buf.last());
+    if (datum_row == nullptr) {
+      cnt++;
+    }
+    if (cnt == THREAD_NUM) {
+      ob_cond_consumer.unlock();
+      break;
+    }
+
+    if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
+      LOG_WARN("fail to append row", KR(ret));
+      ob_mutex1.lock();
+      ret_global = ret;
+      ob_mutex1.unlock();
+      ob_cond_consumer.unlock();
+      break;
+    }
+    datum_row_buf.remove(datum_row_buf.last());
+    ob_cond_consumer.broadcast();
+    ob_cond_consumer.unlock();
+
+  }
+  
   for (int i = 0; i < THREAD_NUM; ++i) {
     threads[i].wait();
   }
 
-  const ObNewRow *new_row = nullptr;
-  const ObLoadDatumRow *datum_row = nullptr;
+
+
+
   // while (OB_SUCC(ret)) {
   //   if (OB_FAIL(buffer_.squash())) {
   //     LOG_WARN("fail to squash buffer", KR(ret));
@@ -1145,7 +1201,6 @@ int ObLoadDataDirectDemo::do_load()
   //     }
   //   }
   // }
-  int ret = OB_SUCCESS;
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort_.close())) {
