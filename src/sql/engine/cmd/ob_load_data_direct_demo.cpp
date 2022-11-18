@@ -127,9 +127,19 @@ int ObLoadSequentialFileReader::read_next_buffer(ObLoadDataBuffer &buffer)
     if (OB_FAIL(file_reader_.pread(buffer.end(), buffer_remain_size, offset_, read_size))) {
       LOG_WARN("fail to do pread", KR(ret));
     } else if (read_size == 0) {
+      LOG_INFO("no buffer to read");
       is_read_end_ = true;
       ret = OB_ITER_END;
     } else {
+      // in order not to have a half row at the end
+      // note that the rows are separated by '\n'
+      char *end = buffer.end() + read_size - 1;
+      for (; end != buffer.begin(); end--) {
+        if (*end == '\n') {
+          break;
+        }
+        read_size--;
+      }
       offset_ += read_size;
       buffer.produce(read_size);
     }
@@ -1143,7 +1153,8 @@ int ObLoadDataDirectDemo::do_load()
 
     while (true) {
       ob_mutex1.lock();
-      if (!OB_SUCC(ret_global)) {
+      if (!OB_SUCC(ret)) {
+      // if (!OB_SUCC(ret_global)) {
         ob_mutex1.unlock();
         break;
       }
@@ -1160,8 +1171,9 @@ int ObLoadDataDirectDemo::do_load()
           if (OB_UNLIKELY(!this->buffer_[thread_idx].empty())) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("unexpected incomplate data", KR(ret));
+            ret_global = ret;
           }
-          ret_global = ret;
+          // ret_global = ret;
           ob_mutex1.unlock();
           ret = OB_SUCCESS;
           break;
@@ -1173,6 +1185,7 @@ int ObLoadDataDirectDemo::do_load()
         ob_mutex1.unlock();
       } else {
         LOG_INFO("read next buffer successfully");
+        LOG_INFO("thread idx", LITERAL_K(thread_idx));
 
         ob_mutex1.unlock();
 
@@ -1181,6 +1194,7 @@ int ObLoadDataDirectDemo::do_load()
           if (OB_FAIL(this->csv_parser_[thread_idx].get_next_row(this->buffer_[thread_idx], new_row))) {
             if (OB_UNLIKELY(OB_ITER_END != ret)) {
               LOG_WARN("fail to get next row", KR(ret));
+              LOG_WARN("thread idx", LITERAL_K(thread_idx));
               ob_mutex1.lock();
               ret_global = ret;
               ob_mutex1.unlock();
