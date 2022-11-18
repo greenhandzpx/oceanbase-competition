@@ -87,6 +87,7 @@ int ObSimpleThreadPool::push(void *task)
 
 void ObSimpleThreadPool::run1()
 {
+  LOG_INFO("simple thread run1");
   int ret = OB_SUCCESS;
   const int64_t thread_idx = get_thread_idx();
   int64_t start_ts = 0;

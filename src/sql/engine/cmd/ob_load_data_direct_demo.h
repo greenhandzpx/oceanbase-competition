@@ -13,7 +13,7 @@ namespace oceanbase
 namespace sql
 {
 
-#define THREAD_NUM 1
+#define THREAD_NUM 4
 
 class ObLoadDataBuffer
 {
@@ -202,7 +202,7 @@ public:
 private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
-private:
+public:
   ObLoadCSVPaser csv_parser_[THREAD_NUM];
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_[THREAD_NUM];

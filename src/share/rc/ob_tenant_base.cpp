@@ -262,6 +262,7 @@ ObCgroupCtrl *ObTenantBase::get_cgroup(lib::ThreadCGroup cgroup)
 
 int ObTenantBase::pre_run(lib::Threads *th)
 {
+  LOG_INFO("pre run");
   int ret = OB_SUCCESS;
   ObTenantEnv::set_tenant(this);
   ObCgroupCtrl *cgroup_ctrl = get_cgroup(th->get_cgroup());
