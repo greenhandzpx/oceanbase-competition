@@ -11,7 +11,7 @@
 #include "lib/thread/thread.h"
 #include "lib/lock/ob_mutex.h"
 #include "lib/container/ob_vector.h"
-#include "sql/engine/cmd/my_thread_pool.h"
+// #include "sql/engine/cmd/my_thread_pool.h"
 
 namespace oceanbase
 {
