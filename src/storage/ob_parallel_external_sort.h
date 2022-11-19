@@ -1181,12 +1181,11 @@ int ObExternalSortRound<T, Compare>::transfer_all_fragment_iters(
   } else {
     for (int i = 0; i < iters_.size(); ++i) {
       if (OB_FAIL(dest_round.add_fragment_iter(iters_.at(i)))) {
-      STORAGE_LOG(WARN, "fail to add fragment iterator", K(ret));
-      } else {
-        // iter will be freed in dest_round
-        iters_.reset();
+        STORAGE_LOG(WARN, "fail to add fragment iterator", K(ret));
       }
     }
+    // iter will be freed in dest_round
+    iters_.reset();
   }
   return ret;
 }
