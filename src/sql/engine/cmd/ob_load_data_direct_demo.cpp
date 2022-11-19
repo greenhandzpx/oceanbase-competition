@@ -15,6 +15,9 @@
 
 namespace oceanbase
 {
+
+thread_local int thread_idx_external_sort;
+
 namespace sql
 {
 using namespace blocksstable;
@@ -971,7 +974,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   }
 
 
-  for (int i = 0; i < THREAD_NUM; ++i) {
+  for (int i = 0; i < storage::THREAD_NUM; ++i) {
     // init csv_parser_
     if (OB_FAIL(csv_parser_[i].init(load_stmt.get_data_struct_in_file(), field_or_var_list_->count(),
                                       load_args.file_cs_type_))) {
@@ -1127,7 +1130,7 @@ int ObLoadDataDirectDemo::do_load()
   ObMutex ob_mutex1;
   ObMutex ob_mutex2;
 
-  auto read_and_append1 = [&thread_idx_global, &ret_global, &ob_mutex1, &ob_mutex2, this](){
+  auto read_and_append1 = [&thread_idx_global, &ret_global, &ob_mutex1, /*&ob_mutex2,*/ this](){
 
     // ReadAndAppendArgs args = (ReadAndAppendArgs *)raw_args;
 
@@ -1147,9 +1150,11 @@ int ObLoadDataDirectDemo::do_load()
 
     int thread_idx;
     ob_mutex1.lock();
+    thread_idx_external_sort = thread_idx_global;
     thread_idx = thread_idx_global;
     thread_idx_global++;
     ob_mutex1.unlock();
+
 
     while (true) {
       ob_mutex1.lock();
@@ -1210,16 +1215,16 @@ int ObLoadDataDirectDemo::do_load()
               ob_mutex1.unlock();
               break;
             } else {
-              ob_mutex2.lock();
+              // ob_mutex2.lock();
               LOG_INFO("cast next row successfully");
               if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
-                ob_mutex2.unlock();
+                // ob_mutex2.unlock();
                 ob_mutex1.lock();
                 ret_global = ret;
                 ob_mutex1.unlock();
-              } else {
-                ob_mutex2.unlock();
+              // } else {
+                // ob_mutex2.unlock();
               }
             }
           }
@@ -1243,7 +1248,7 @@ int ObLoadDataDirectDemo::do_load()
   // thread_pool.set_thread_count(THREAD_NUM);
   thread_pool.set_run_wrapper(MTL_CTX());
   thread_pool.set_func(read_and_append1);
-  if (OB_FAIL(thread_pool.init(THREAD_NUM, THREAD_NUM))) {
+  if (OB_FAIL(thread_pool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
     LOG_WARN("fail to init thread pool");
     return ret;
   }

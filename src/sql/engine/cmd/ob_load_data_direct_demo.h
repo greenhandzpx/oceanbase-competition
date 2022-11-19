@@ -8,12 +8,17 @@
 #include "storage/ob_parallel_external_sort.h"
 #include "storage/tx_storage/ob_ls_handle.h"
 
+
+
+
+
 namespace oceanbase
 {
 namespace sql
 {
 
-#define THREAD_NUM 4
+// const int THREAD_NUM = 4;
+// #define THREAD_NUM 4
 
 class MyThreadPool: public common::ObSimpleThreadPool {
 public:
@@ -239,10 +244,10 @@ private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
 public:
-  ObLoadCSVPaser csv_parser_[THREAD_NUM];
+  ObLoadCSVPaser csv_parser_[storage::THREAD_NUM];
   ObLoadSequentialFileReader file_reader_;
-  ObLoadDataBuffer buffer_[THREAD_NUM];
-  ObLoadRowCaster row_caster_[THREAD_NUM];
+  ObLoadDataBuffer buffer_[storage::THREAD_NUM];
+  ObLoadRowCaster row_caster_[storage::THREAD_NUM];
   int thread_idx_;
   ObLoadExternalSort external_sort_;
   ObLoadSSTableWriter sstable_writer_;
