@@ -1158,7 +1158,7 @@ int ObLoadDataDirectDemo::do_load()
 
     while (true) {
       ob_mutex1.lock();
-      if (!OB_SUCC(ret)) {
+      if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
       // if (!OB_SUCC(ret_global)) {
         ob_mutex1.unlock();
         break;
