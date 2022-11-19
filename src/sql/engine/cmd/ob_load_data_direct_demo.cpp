@@ -1011,113 +1011,6 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 }
 
 
-struct ReadAndAppendArgs {
-  int *thread_idx_global;
-  int *ret_global;
-  ObMutex *ob_mutex1;
-  ObMutex *ob_mutex2;
-  ObLoadDataDirectDemo *demo;
-};
-
-void read_and_append(void *raw_args) 
-{
-  ReadAndAppendArgs *args = (ReadAndAppendArgs *)raw_args;
-
-  int &thread_idx_global = *(args->thread_idx_global);
-  int &ret_global = *(args->ret_global);
-  ObMutex *ob_mutex1 = args->ob_mutex1;
-  ObMutex *ob_mutex2 = args->ob_mutex2;
-  ObLoadDataDirectDemo *this_demo = args->demo;
-
-  // thread private variable
-  int ret = OB_SUCCESS;
-  const ObNewRow *new_row = nullptr;
-  const ObLoadDatumRow *datum_row = nullptr;
-  // ObLoadRowCaster row_caster;
-  // ObLoadDataBuffer buffer;
-  // ObLoadCSVPaser csv_parser;
-
-  int thread_idx;
-  ob_mutex1->lock();
-  thread_idx = thread_idx_global;
-  thread_idx_global++;
-  ob_mutex1->unlock();
-
-  while (true) {
-    ob_mutex1->lock();
-    if (!OB_SUCC(ret_global)) {
-      ob_mutex1->unlock();
-      break;
-    }
-    if (OB_FAIL(this_demo->buffer_[thread_idx].squash())) {
-      LOG_WARN("fail to squash buffer", KR(ret));
-      ret_global = ret;
-      ob_mutex1->unlock();
-    } else if (OB_FAIL(this_demo->file_reader_.read_next_buffer(this_demo->buffer_[thread_idx]))) {
-      if (OB_UNLIKELY(OB_ITER_END != ret)) {
-        ret_global = ret;
-        ob_mutex1->unlock();
-        LOG_WARN("fail to read next buffer", KR(ret));
-      } else {
-        if (OB_UNLIKELY(!this_demo->buffer_[thread_idx].empty())) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected incomplate data", KR(ret));
-        }
-        ret_global = ret;
-        ob_mutex1->unlock();
-        ret = OB_SUCCESS;
-        break;
-      }
-    } else if (OB_UNLIKELY(this_demo->buffer_[thread_idx].empty())) {
-      ret = OB_ERR_UNEXPECTED;
-      ret_global = ret;
-      LOG_WARN("unexpected empty buffer", KR(ret));
-      ob_mutex1->unlock();
-    } else {
-      LOG_INFO("read next buffer successfully");
-
-      ob_mutex1->unlock();
-
-      while (OB_SUCC(ret)) {
-
-        if (OB_FAIL(this_demo->csv_parser_[thread_idx].get_next_row(this_demo->buffer_[thread_idx], new_row))) {
-          if (OB_UNLIKELY(OB_ITER_END != ret)) {
-            LOG_WARN("fail to get next row", KR(ret));
-            ob_mutex1->lock();
-            ret_global = ret;
-            ob_mutex1->unlock();
-          } else {
-            ret = OB_SUCCESS;
-            break;
-          }
-        } else {
-          if (OB_FAIL(this_demo->row_caster_[thread_idx].get_casted_row(*new_row, datum_row))) {
-            LOG_WARN("fail to cast row", KR(ret));
-            ob_mutex1->lock();
-            ret_global = ret;
-            ob_mutex1->unlock();
-            break;
-          } else {
-            ob_mutex2->lock();
-            LOG_INFO("cast next row successfully");
-            if (OB_FAIL(this_demo->external_sort_.append_row(*datum_row))) {
-              LOG_WARN("fail to append row", KR(ret));
-              ob_mutex2->unlock();
-              ob_mutex1->lock();
-              ret_global = ret;
-              ob_mutex1->unlock();
-            } else {
-              ob_mutex2->unlock();
-            }
-          }
-        }
-
-      }
-    }
-  }
-}
-
-
 
 int ObLoadDataDirectDemo::do_load()
 {
@@ -1132,21 +1025,11 @@ int ObLoadDataDirectDemo::do_load()
 
   auto read_and_append1 = [&thread_idx_global, &ret_global, &ob_mutex1, /*&ob_mutex2,*/ this](){
 
-    // ReadAndAppendArgs args = (ReadAndAppendArgs *)raw_args;
-
-    // int &thread_idx_global = *(args->thread_idx_global);
-    // int &ret_global = *(args->ret_global);
-    // ObMutex &ob_mutex1 = *(args->ob_mutex1);
-    // ObMutex &ob_mutex2 = *(args->ob_mutex2);
-    // ObLoadDataDirectDemo *this = args->demo;
 
     // thread private variable
     int ret = OB_SUCCESS;
     const ObNewRow *new_row = nullptr;
     const ObLoadDatumRow *datum_row = nullptr;
-    // ObLoadRowCaster row_caster;
-    // ObLoadDataBuffer buffer;
-    // ObLoadCSVPaser csv_parser;
 
     int thread_idx;
     ob_mutex1.lock();
@@ -1237,12 +1120,6 @@ int ObLoadDataDirectDemo::do_load()
 
   int ret = OB_SUCCESS;
 
-  // ReadAndAppendArgs args;
-  // args.thread_idx_global = &thread_idx_global;
-  // args.ret_global = &ret_global;
-  // args.ob_mutex1 = &ob_mutex1;
-  // args.ob_mutex2 = &ob_mutex2;
-  // args.demo = this;
 
   MyThreadPool thread_pool;
   // thread_pool.set_thread_count(THREAD_NUM);
@@ -1252,23 +1129,8 @@ int ObLoadDataDirectDemo::do_load()
     LOG_WARN("fail to init thread pool");
     return ret;
   }
-  // thread_pool.set_args(&args);
-  // for (int i = 0; i < THREAD_NUM; ++i) {
-  //   thread_pool.push((void *)read_and_append);
-  // }
-  // thread_pool.start();
+
   thread_pool.wait();
-
-
-  // ObVector<Thread> threads;
-  // for (int i = 0; i < THREAD_NUM; ++i) {
-  //   threads.push_back(Thread(8 << 20));
-  //   threads[i].start(read_and_append);
-  // }
-
-  // for (int i = 0; i < THREAD_NUM; ++i) {
-  //   threads[i].wait();
-  // }
 
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
