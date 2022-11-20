@@ -1171,9 +1171,12 @@ int ObLoadDataDirectDemo::do_load()
 
   if (OB_SUCC(ret)) {
     LOG_INFO("start to close external sort");
+    int64_t start_ts = ObTimeUtility::current_time_ns();
     if (OB_FAIL(external_sort_.close())) {
       LOG_WARN("fail to close external sort", KR(ret));
     }
+    start_ts = (ObTimeUtility::current_time_ns() - start_ts);
+    LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
   }
   while (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
