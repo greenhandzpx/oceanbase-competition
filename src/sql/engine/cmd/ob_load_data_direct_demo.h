@@ -236,7 +236,7 @@ private:
 class ObLoadDataDirectDemo : public ObLoadDataBase
 {
   static const int64_t MEM_BUFFER_SIZE = (1LL << 30); // 1G
-  static const int64_t FILE_BUFFER_SIZE = (100LL << 20); // 100M
+  static const int64_t FILE_BUFFER_SIZE = (2LL << 20); // 2M
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
