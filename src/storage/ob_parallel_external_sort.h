@@ -36,7 +36,7 @@ extern thread_local int thread_idx_external_sort;
 namespace storage
 {
 
-const int THREAD_NUM = 7;
+const int THREAD_NUM = 4;
 
 struct ObExternalSortConstant
 {

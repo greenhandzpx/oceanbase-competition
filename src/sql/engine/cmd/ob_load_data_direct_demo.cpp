@@ -1030,9 +1030,9 @@ int ObLoadDataDirectDemo::do_load()
     int ret = OB_SUCCESS;
     const ObNewRow *new_row = nullptr;
     const ObLoadDatumRow *datum_row = nullptr;
-    // int64_t parser_time = 0;
-    // int64_t cast_time = 0;
-    // int64_t append_time = 0;
+    int64_t parser_time = 0;
+    int64_t cast_time = 0;
+    int64_t append_time = 0;
 
 
     int thread_idx;
@@ -1082,7 +1082,7 @@ int ObLoadDataDirectDemo::do_load()
         ob_mutex1.unlock();
 
         while (OB_SUCC(ret)) {
-          // int64_t p_st_ts = ObTimeUtility::current_time_ns();
+          int64_t p_st_ts = ObTimeUtility::current_time_ns();
           if (OB_FAIL(this->csv_parser_[thread_idx].get_next_row(this->buffer_[thread_idx], new_row))) {
             if (OB_UNLIKELY(OB_ITER_END != ret)) {
               LOG_WARN("fail to get next row", KR(ret));
@@ -1095,8 +1095,8 @@ int ObLoadDataDirectDemo::do_load()
               break;
             }
           } else {
-            // parser_time += ObTimeUtility::current_time_ns() - p_st_ts;
-            // int64_t c_st_ts = ObTimeUtility::current_time_ns();
+            parser_time += ObTimeUtility::current_time_ns() - p_st_ts;
+            int64_t c_st_ts = ObTimeUtility::current_time_ns();
             if (OB_FAIL(this->row_caster_[thread_idx].get_casted_row(*new_row, datum_row))) {
               LOG_WARN("fail to cast row", KR(ret));
               ob_mutex1.lock();
@@ -1105,8 +1105,8 @@ int ObLoadDataDirectDemo::do_load()
               break;
             } else {
               // ob_mutex2.lock();
-              // cast_time += ObTimeUtility::current_time_ns() - c_st_ts;
-              // int64_t e_st_ts = ObTimeUtility::current_time_ns();
+              cast_time += ObTimeUtility::current_time_ns() - c_st_ts;
+              int64_t e_st_ts = ObTimeUtility::current_time_ns();
               // LOG_INFO("cast next row successfully");
               if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
@@ -1117,24 +1117,25 @@ int ObLoadDataDirectDemo::do_load()
               // } else {
                 // ob_mutex2.unlock();
               }
-              // append_time += ObTimeUtility::current_time_ns() - e_st_ts;
+              append_time += ObTimeUtility::current_time_ns() - e_st_ts;
             }
           }
 
         }
       }
     }
-    // ob_mutex1.lock();
-    // LOG_INFO("thread idx ", LITERAL_K(thread_idx));
-    // LOG_INFO("parser time(ns):", LITERAL_K(parser_time));
-    // LOG_INFO("cast time(ns):", LITERAL_K(cast_time));
-    // LOG_INFO("append time(ns):", LITERAL_K(append_time));
-    // ob_mutex1.unlock();
+    ob_mutex1.lock();
+    LOG_INFO("thread idx ", LITERAL_K(thread_idx));
+    LOG_INFO("parser time(ns):", LITERAL_K(parser_time));
+    LOG_INFO("cast time(ns):", LITERAL_K(cast_time));
+    LOG_INFO("append time(ns):", LITERAL_K(append_time));
+    ob_mutex1.unlock();
   };
 
   int ret = OB_SUCCESS;
 
-
+  int64_t pca_time = 0;
+  int64_t start_ts = ObTimeUtility::current_time_ns();
   MyThreadPool thread_pool;
   // thread_pool.set_thread_count(THREAD_NUM);
   thread_pool.set_run_wrapper(MTL_CTX());
@@ -1145,6 +1146,9 @@ int ObLoadDataDirectDemo::do_load()
   }
 
   thread_pool.wait();
+
+  pca_time = ObTimeUtility::current_time_ns() - start_ts;
+  LOG_INFO("pca time(ns):", LITERAL_K(pca_time));
 
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
@@ -1183,6 +1187,8 @@ int ObLoadDataDirectDemo::do_load()
   //   }
   // }
 
+  int64_t get_row_time = 0;
+  int64_t sstable_time = 0;
   if (OB_SUCC(ret)) {
     LOG_INFO("start to close external sort");
     int64_t start_ts = ObTimeUtility::current_time_ns();
@@ -1193,6 +1199,7 @@ int ObLoadDataDirectDemo::do_load()
     LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
   }
   while (OB_SUCC(ret)) {
+    int64_t start_ts = ObTimeUtility::current_time_ns();
     if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
       if (OB_UNLIKELY(OB_ITER_END != ret)) {
         LOG_WARN("fail to get next row", KR(ret));
@@ -1200,15 +1207,26 @@ int ObLoadDataDirectDemo::do_load()
         ret = OB_SUCCESS;
         break;
       }
-    } else if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
-      LOG_WARN("fail to append row", KR(ret));
+    } else {
+      get_row_time += ObTimeUtility::current_time_ns() - start_ts;
+      start_ts = ObTimeUtility::current_time_ns();
+      if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
+        LOG_WARN("fail to append row", KR(ret));
+      }
+      sstable_time += ObTimeUtility::current_time_ns() - start_ts;
     }
   }
+  start_ts = ObTimeUtility::current_time_ns();
   if (OB_SUCC(ret)) {
     if (OB_FAIL(sstable_writer_.close())) {
       LOG_WARN("fail to close sstable writer", KR(ret));
     }
   }
+  int64_t close_time = ObTimeUtility::current_time_ns() - start_ts;
+  LOG_INFO("external sort get row time(ns):", LITERAL_K(get_row_time));
+  LOG_INFO("sstable time(ns):", LITERAL_K(sstable_time));
+  LOG_INFO("sstable close time(ns):", LITERAL_K(close_time));
+
   return ret;
 }
 
