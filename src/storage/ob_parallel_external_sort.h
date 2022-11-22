@@ -1014,6 +1014,8 @@ public:
   int add_fragment_iter(ObFragmentIterator<T> *iter);
   int transfer_final_sorted_fragment_iter(ObExternalSortRound &dest_round);
   int transfer_all_fragment_iters(ObExternalSortRound &dest_round);
+  int set_total_row_num(int64_t total_row_num);
+  int set_final_round_flag();
 private:
   typedef ObFragmentReaderV2<T> FragmentReader;
   typedef ObFragmentIterator<T> FragmentIterator;
@@ -1027,11 +1029,13 @@ private:
   FragmentWriter writer_;
   int64_t expire_timestamp_;
   Compare *compare_;
-  FragmentMerger merger_;
+  FragmentMerger merger_[THREAD_NUM];
   common::ObArenaAllocator allocator_;
   uint64_t tenant_id_;
   int64_t dir_id_;
   bool is_writer_opened_;
+  int64_t total_row_num_;
+  bool is_final_round_;
 };
 
 template<typename T, typename Compare>
@@ -1039,7 +1043,8 @@ ObExternalSortRound<T, Compare>::ObExternalSortRound()
   : is_inited_(false), merge_count_(0), file_buf_size_(0), iters_(), writer_(),
     expire_timestamp_(0), compare_(NULL), merger_(),
     allocator_(common::ObNewModIds::OB_ASYNC_EXTERNAL_SORTER, common::OB_MALLOC_BIG_BLOCK_SIZE),
-    tenant_id_(common::OB_INVALID_ID), dir_id_(-1), is_writer_opened_(false)
+    tenant_id_(common::OB_INVALID_ID), dir_id_(-1), is_writer_opened_(false), total_row_num_(0), 
+    is_final_round_(false)
 {
 }
 
@@ -1075,7 +1080,9 @@ int ObExternalSortRound<T, Compare>::init(
     compare_ = compare;
     tenant_id_ = tenant_id;
     is_writer_opened_ = false;
-    merger_.reset();
+    for (int i = 0; i < THREAD_NUM; ++i) {
+      merger_[i].reset();
+    }
   }
   return ret;
 }
@@ -1197,8 +1204,23 @@ int ObExternalSortRound<T, Compare>::build_merger()
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
-  } else if (OB_FAIL(merger_.init(iters_, compare_))) {
-    STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
+    return ret;
+  }
+  if (is_final_round_) {
+    for (int i = 0; i < THREAD_NUM; ++i) {
+      if (i >= iters_.count()) {
+        break;
+      }
+      common::ObSEArray<FragmentIterator *, 1> iter_arr;
+      iter_arr.push_back(iters_.at(i));
+      if (OB_FAIL(merger_[i].init(iter_arr, compare_))) {
+        STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
+      }
+    }
+  } else {
+    if (OB_FAIL(merger_[0].init(iters_, compare_))) {
+      STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
+    }
   }
   return ret;
 }
@@ -1225,8 +1247,13 @@ int ObExternalSortRound<T, Compare>::do_merge(
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
   } else {
+    next_round.set_total_row_num(total_row_num_);
     int64_t reader_idx = 0;
     STORAGE_LOG(INFO, "external sort do merge start");
+    if (reader_idx + merge_count_ >= iters_.count()) {
+      // this must be the final merge round
+      next_round.set_final_round_flag();
+    }
     while (OB_SUCC(ret) && reader_idx < iters_.count()) {
       if (OB_FAIL(do_one_run(reader_idx, next_round))) {
         STORAGE_LOG(WARN, "fail to do one run merge", K(ret));
@@ -1258,6 +1285,12 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     int tmp_ret = OB_SUCCESS;
     const int64_t end_reader_idx = std::min(start_reader_idx + merge_count_, iters_.count());
     FragmentIteratorList iters;
+    int64_t cnt = 0;
+    int64_t row_num_per_frag = total_row_num_ / THREAD_NUM;
+    int64_t remain_row_num = total_row_num_ % THREAD_NUM;
+    if (remain_row_num != 0) {
+      row_num_per_frag++;
+    }
     for (int64_t i = start_reader_idx; OB_SUCC(ret) && i < end_reader_idx; ++i) {
       if (OB_FAIL(iters.push_back(iters_.at(i)))) {
         STORAGE_LOG(WARN, "fail to push back iterator list", K(ret));
@@ -1265,17 +1298,17 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     }
 
     if (OB_SUCC(ret)) {
-      merger_.reset();
-      if (OB_FAIL(merger_.init(iters, compare_))) {
+      merger_[0].reset();
+      if (OB_FAIL(merger_[0].init(iters, compare_))) {
         STORAGE_LOG(WARN, "fail to init ObFragmentMerger", K(ret));
-      } else if (OB_FAIL(merger_.open())) {
+      } else if (OB_FAIL(merger_[0].open())) {
         STORAGE_LOG(WARN, "fail to open merger", K(ret));
       }
     }
 
     while (OB_SUCC(ret)) {
       share::dag_yield();
-      if (OB_FAIL(merger_.get_next_item(item))) {
+      if (OB_FAIL(merger_[0].get_next_item(item))) {
         if (common::OB_ITER_END != ret) {
           STORAGE_LOG(WARN, "fail to get next item", K(ret));
         } else {
@@ -1285,13 +1318,23 @@ int ObExternalSortRound<T, Compare>::do_one_run(
       } else {
         if (OB_FAIL(next_round.add_item(*item))) {
           STORAGE_LOG(WARN, "fail to add item", K(ret));
+        } else {
+          cnt++;
+          if (cnt % row_num_per_frag == 0) {
+            // every `row_num_per_frag` rows will construct a fragment
+            if (OB_FAIL(next_round.build_fragment())) {
+              STORAGE_LOG(WARN, "fail to build fragment", K(ret));
+            }
+          }
         }
       }
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(next_round.build_fragment())) {
-        STORAGE_LOG(WARN, "fail to build fragment", K(ret));
+      if (remain_row_num != 0) {
+        if (OB_FAIL(next_round.build_fragment())) {
+          STORAGE_LOG(WARN, "fail to build fragment", K(ret));
+        }
       }
     }
 
@@ -1316,11 +1359,11 @@ int ObExternalSortRound<T, Compare>::get_next_item(const T *&item)
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
-  } else if (!merger_.is_opened() && OB_FAIL(merger_.open())) {
+  } else if (!merger_[thread_idx_external_sort].is_opened() && OB_FAIL(merger_[thread_idx_external_sort].open())) {
     STORAGE_LOG(WARN, "fail to open merger", K(ret));
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(merger_.get_next_item(item))) {
+    if (OB_FAIL(merger_[thread_idx_external_sort].get_next_item(item))) {
       if (common::OB_ITER_END != ret) {
         STORAGE_LOG(WARN, "fail to get next item", K(ret));
       }
@@ -1333,6 +1376,20 @@ template<typename T, typename Compare>
 int64_t ObExternalSortRound<T, Compare>::get_fragment_count()
 {
   return iters_.count();
+}
+
+template<typename T, typename Compare>
+int ObExternalSortRound<T, Compare>::set_total_row_num(int64_t total_row_num)
+{
+  total_row_num_ = total_row_num;
+  return common::OB_SUCCESS;
+}
+
+template<typename T, typename Compare>
+int ObExternalSortRound<T, Compare>::set_final_round_flag()
+{
+  is_final_round_ = true;
+  return common::OB_SUCCESS;
 }
 
 template<typename T, typename Compare>
@@ -1365,7 +1422,9 @@ int ObExternalSortRound<T, Compare>::clean_up()
   iters_.reset();
   expire_timestamp_ = 0;
   compare_ = NULL;
-  merger_.reset();
+  for (int i = 0; i < THREAD_NUM; ++i) {
+    merger_[i].reset();
+  }
   allocator_.reset();
   return ret;
 }
@@ -1746,13 +1805,14 @@ private:
   ExternalSortRound *next_round_;
   bool is_empty_;
   uint64_t tenant_id_;
+  int64_t total_row_num_;
 };
 
 template<typename T, typename Compare>
 ObExternalSort<T, Compare>::ObExternalSort()
   : is_inited_(false), file_buf_size_(0), buf_mem_limit_(0), expire_timestamp_(0), merge_count_per_round_(0),
     compare_(NULL), memory_sort_round_(), curr_round_(), next_round_(NULL),
-    is_empty_(true), tenant_id_(common::OB_INVALID_ID)
+    is_empty_(true), tenant_id_(common::OB_INVALID_ID), total_row_num_(0)
 {
   for (int i = 0; i < THREAD_NUM; ++i) {
     curr_round_[i] = NULL;
@@ -1833,6 +1893,7 @@ int ObExternalSort<T, Compare>::add_item(const T &item)
   } else if (OB_FAIL(memory_sort_round_[thread_idx_external_sort].add_item(item))) {
     STORAGE_LOG(WARN, "fail to add item in memory sort round", K(ret));
   }
+  total_row_num_++;
   return ret;
 }
 
@@ -1886,6 +1947,8 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
       if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
           expire_timestamp_, tenant_id_, compare_))) {
         STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
+      } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
+        STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
       } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
         STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
       } else if (OB_FAIL(curr_round_[0]->clean_up())) {
