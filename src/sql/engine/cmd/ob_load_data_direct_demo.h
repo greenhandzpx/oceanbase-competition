@@ -195,6 +195,8 @@ public:
   int append_row(const ObLoadDatumRow &datum_row);
   int close();
   int get_next_row(const ObLoadDatumRow *&datum_row);
+  bool is_empty() { return external_sort_.is_empty(); }
+  bool is_in_memory() { return external_sort_.is_in_memory(); }
 private:
   common::ObArenaAllocator allocator_;
   blocksstable::ObStorageDatumUtils datum_utils_;
@@ -227,7 +229,7 @@ private:
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_desc_;
-  blocksstable::ObMacroBlockWriter macro_block_writer_;
+  blocksstable::ObMacroBlockWriter macro_block_writer_[storage::THREAD_NUM];
   blocksstable::ObDatumRow datum_row_;
   bool is_closed_;
   bool is_inited_;

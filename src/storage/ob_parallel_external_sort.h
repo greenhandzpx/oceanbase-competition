@@ -32,6 +32,7 @@ namespace oceanbase
 {
 
 extern thread_local int thread_idx_external_sort;
+extern thread_local int thread_idx_block_writer;
 
 namespace storage
 {
@@ -1016,6 +1017,7 @@ public:
   int transfer_all_fragment_iters(ObExternalSortRound &dest_round);
   int set_total_row_num(int64_t total_row_num);
   int set_final_round_flag();
+  bool is_final_round() { return is_final_round_; }
 private:
   typedef ObFragmentReaderV2<T> FragmentReader;
   typedef ObFragmentIterator<T> FragmentIterator;
@@ -1250,7 +1252,7 @@ int ObExternalSortRound<T, Compare>::do_merge(
     next_round.set_total_row_num(total_row_num_);
     int64_t reader_idx = 0;
     STORAGE_LOG(INFO, "external sort do merge start");
-    if (reader_idx + merge_count_ >= iters_.count()) {
+    if (merge_count_ >= iters_.count()) {
       // this must be the final merge round
       next_round.set_final_round_flag();
     }
@@ -1319,11 +1321,15 @@ int ObExternalSortRound<T, Compare>::do_one_run(
         if (OB_FAIL(next_round.add_item(*item))) {
           STORAGE_LOG(WARN, "fail to add item", K(ret));
         } else {
-          cnt++;
-          if (cnt % row_num_per_frag == 0) {
-            // every `row_num_per_frag` rows will construct a fragment
-            if (OB_FAIL(next_round.build_fragment())) {
-              STORAGE_LOG(WARN, "fail to build fragment", K(ret));
+          if (next_round.is_final_round()) {
+            cnt++;
+            if (cnt % row_num_per_frag == 0) {
+              // every `row_num_per_frag` rows will construct a fragment
+              LOG_INFO("final run info", LITERAL_K(row_num_per_frag));
+              LOG_INFO("final run build a new frag", LITERAL_K(cnt));
+              if (OB_FAIL(next_round.build_fragment())) {
+                STORAGE_LOG(WARN, "fail to build fragment", K(ret));
+              }
             }
           }
         }
@@ -1359,11 +1365,11 @@ int ObExternalSortRound<T, Compare>::get_next_item(const T *&item)
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
-  } else if (!merger_[thread_idx_external_sort].is_opened() && OB_FAIL(merger_[thread_idx_external_sort].open())) {
+  } else if (!merger_[thread_idx_block_writer].is_opened() && OB_FAIL(merger_[thread_idx_block_writer].open())) {
     STORAGE_LOG(WARN, "fail to open merger", K(ret));
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(merger_[thread_idx_external_sort].get_next_item(item))) {
+    if (OB_FAIL(merger_[thread_idx_block_writer].get_next_item(item))) {
       if (common::OB_ITER_END != ret) {
         STORAGE_LOG(WARN, "fail to get next item", K(ret));
       }
@@ -1789,6 +1795,8 @@ public:
   int get_current_round(ExternalSortRound *&round);
   TO_STRING_KV(K(is_inited_), K(file_buf_size_), K(buf_mem_limit_), K(expire_timestamp_),
       K(merge_count_per_round_), KP(tenant_id_), KP(compare_));
+  bool is_in_memory();
+  bool is_empty();
 private:
   // one for next_round_, the others for curr_round_
   static const int64_t EXTERNAL_SORT_ROUND_CNT = THREAD_NUM + 1;
@@ -1822,6 +1830,18 @@ ObExternalSort<T, Compare>::ObExternalSort()
 template<typename T, typename Compare>
 ObExternalSort<T, Compare>::~ObExternalSort()
 {
+}
+
+template<typename T, typename Compare>
+bool ObExternalSort<T, Compare>::is_in_memory()
+{
+  return memory_sort_round_[0].has_data() && memory_sort_round_[0].is_in_memory();
+}
+
+template<typename T, typename Compare>
+bool ObExternalSort<T, Compare>::is_empty()
+{
+  return !memory_sort_round_[0].has_data();
 }
 
 template<typename T, typename Compare>
@@ -1941,7 +1961,7 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     for (int i = 1; i < THREAD_NUM; ++i) {
       curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
     }
-    while (OB_SUCC(ret) && curr_round_[0]->get_fragment_count() > final_round_limit) {
+    while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
       const int64_t start_time = common::ObTimeUtility::current_time();
       STORAGE_LOG(INFO, "do sort start round", K(round_id));
       if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
