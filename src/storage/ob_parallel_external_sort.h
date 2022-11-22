@@ -1525,13 +1525,15 @@ private:
   common::ObVector<T *> item_list_;
   Compare *compare_;
   ObMemoryFragmentIterator<T> *iter_;
+public:
+  int64_t total_row_num_;
 };
 
 template<typename T, typename Compare>
 ObMemorySortRound<T, Compare>::ObMemorySortRound()
   : is_inited_(false), is_in_memory_(false), has_data_(false), buf_mem_limit_(0), expire_timestamp_(0),
     next_round_(NULL), allocator_(common::ObNewModIds::OB_ASYNC_EXTERNAL_SORTER, common::OB_MALLOC_BIG_BLOCK_SIZE), item_list_(NULL, common::ObNewModIds::OB_ASYNC_EXTERNAL_SORTER),
-    compare_(NULL), iter_(NULL)
+    compare_(NULL), iter_(NULL), total_row_num_(0)
 {
 }
 
@@ -1601,6 +1603,9 @@ int ObMemorySortRound<T, Compare>::add_item(const T &item)
     } else if (OB_FAIL(item_list_.push_back(new_item))) {
       STORAGE_LOG(WARN, "fail to push back new item", K(ret));
     }
+  }
+  if (OB_SUCC(ret)) {
+    total_row_num_++;
   }
   return ret;
 }
@@ -1913,7 +1918,7 @@ int ObExternalSort<T, Compare>::add_item(const T &item)
   } else if (OB_FAIL(memory_sort_round_[thread_idx_external_sort].add_item(item))) {
     STORAGE_LOG(WARN, "fail to add item in memory sort round", K(ret));
   }
-  total_row_num_++;
+  // total_row_num_++;
   return ret;
 }
 
@@ -1951,6 +1956,9 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
   // } else {
     if (is_empty_) {
       return ret;
+    }
+    for (int i = 0; i < THREAD_NUM; ++i) {
+      total_row_num_ += memory_sort_round_[i].total_row_num_;
     }
     // final_merge = true is for performance optimization, the count of fragments is reduced to lower than merge_count_per_round,
     // then the last round of merge this fragment is skipped

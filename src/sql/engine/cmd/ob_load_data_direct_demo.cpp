@@ -795,6 +795,7 @@ int ObLoadSSTableWriter::init_macro_block_writer(const ObTableSchema *table_sche
       data_seq.set_parallel_degree(i);
       if (OB_FAIL(macro_block_writer_[i].open(data_store_desc_, data_seq))) {
         LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
+        break;
       }
     }
   }
