@@ -722,17 +722,22 @@ int ObLoadSSTableWriter::init(const ObTableSchema *table_schema)
       LOG_WARN("fail to init sstable index builder", KR(ret));
     } else if (OB_FAIL(init_macro_block_writer(table_schema))) {
       LOG_WARN("fail to init macro block writer", KR(ret));
-    } else if (OB_FAIL(datum_row_.init(column_count_ + extra_rowkey_column_num_))) {
-      LOG_WARN("fail to init datum row", KR(ret));
+
     } else {
+      for (int i = 0; i < storage::THREAD_NUM; ++i) {
+        if (OB_FAIL(datum_row_[i].init(column_count_ + extra_rowkey_column_num_))) {
+          LOG_WARN("fail to init datum row", KR(ret));
+          return ret;
+        }
+        datum_row_[i].row_flag_.set_flag(ObDmlFlag::DF_INSERT);
+        datum_row_[i].mvcc_row_flag_.set_last_multi_version_row(true);
+        datum_row_[i].storage_datums_[rowkey_column_num_].set_int(-1); // fill trans_version
+        datum_row_[i].storage_datums_[rowkey_column_num_ + 1].set_int(0); // fill sql_no
+      }
       table_key_.table_type_ = ObITable::MAJOR_SSTABLE;
       table_key_.tablet_id_ = tablet_id_;
       table_key_.log_ts_range_.start_log_ts_ = 0;
       table_key_.log_ts_range_.end_log_ts_ = ObTimeUtil::current_time_ns();
-      datum_row_.row_flag_.set_flag(ObDmlFlag::DF_INSERT);
-      datum_row_.mvcc_row_flag_.set_last_multi_version_row(true);
-      datum_row_.storage_datums_[rowkey_column_num_].set_int(-1); // fill trans_version
-      datum_row_.storage_datums_[rowkey_column_num_ + 1].set_int(0); // fill sql_no
       is_inited_ = true;
     }
   }
@@ -817,12 +822,12 @@ int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row)
   } else {
     for (int64_t i = 0; i < column_count_; ++i) {
       if (i < rowkey_column_num_) {
-        datum_row_.storage_datums_[i] = datum_row.datums_[i];
+        datum_row_[thread_idx_block_writer].storage_datums_[i] = datum_row.datums_[i];
       } else {
-        datum_row_.storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
+        datum_row_[thread_idx_block_writer].storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
       }
     }
-    if (OB_FAIL(macro_block_writer_[thread_idx_block_writer].append_row(datum_row_))) {
+    if (OB_FAIL(macro_block_writer_[thread_idx_block_writer].append_row(datum_row_[thread_idx_block_writer]))) {
     // if (OB_FAIL(macro_block_writer_.append_row(datum_row_))) {
       LOG_WARN("fail to append row", KR(ret));
     }
@@ -1282,9 +1287,9 @@ int ObLoadDataDirectDemo::do_load()
         }
       } else {
         cnt++;
-        if (cnt == 100) {
-          break;
-        }
+        // if (cnt == 300000) {
+        //   break;
+        // }
         // ob_mutex3.unlock();
         if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));

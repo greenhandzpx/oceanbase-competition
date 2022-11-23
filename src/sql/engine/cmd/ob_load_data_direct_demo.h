@@ -230,7 +230,7 @@ private:
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_desc_;
   blocksstable::ObMacroBlockWriter macro_block_writer_[storage::THREAD_NUM];
-  blocksstable::ObDatumRow datum_row_;
+  blocksstable::ObDatumRow datum_row_[storage::THREAD_NUM];
   bool is_closed_;
   bool is_inited_;
 };
