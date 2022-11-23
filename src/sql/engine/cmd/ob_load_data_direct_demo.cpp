@@ -1253,6 +1253,9 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_global++;
     ob_mutex3.unlock();
 
+
+    int cnt = 0;
+
     while (OB_SUCC(ret)) {
       // ob_mutex3.lock();
       if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
@@ -1278,6 +1281,10 @@ int ObLoadDataDirectDemo::do_load()
           break;
         }
       } else {
+        cnt++;
+        if (cnt == 100) {
+          break;
+        }
         // ob_mutex3.unlock();
         if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));

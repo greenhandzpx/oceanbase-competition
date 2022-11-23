@@ -1209,6 +1209,8 @@ int ObExternalSortRound<T, Compare>::build_merger()
     return ret;
   }
   if (is_final_round_) {
+    int cnt = iters_.count();
+    LOG_INFO("external sort build merger", LITERAL_K(cnt));
     for (int i = 0; i < THREAD_NUM; ++i) {
       if (i >= iters_.count()) {
         break;
@@ -1325,6 +1327,8 @@ int ObExternalSortRound<T, Compare>::do_one_run(
             cnt++;
             if (cnt % row_num_per_frag == 0) {
               // every `row_num_per_frag` rows will construct a fragment
+              int row_num = total_row_num_;
+              LOG_INFO("final run total row num", LITERAL_K(row_num));
               LOG_INFO("final run info", LITERAL_K(row_num_per_frag));
               LOG_INFO("final run build a new frag", LITERAL_K(cnt));
               if (OB_FAIL(next_round.build_fragment())) {
@@ -1933,6 +1937,9 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
   // } else if (OB_FAIL(memory_sort_round_.finish())) {
   //   STORAGE_LOG(WARN, "fail to finish memory sort round", K(ret));
   } 
+  for (int i = 0; i < THREAD_NUM; ++i) {
+    total_row_num_ += memory_sort_round_[i].total_row_num_;
+  }
   // transfer all the other memory sort rounds' data to the first one
   for (int i = 1; i < THREAD_NUM; ++i) {
     memory_sort_round_[i].transfer_all_items(memory_sort_round_[0]);
@@ -1956,9 +1963,6 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
   // } else {
     if (is_empty_) {
       return ret;
-    }
-    for (int i = 0; i < THREAD_NUM; ++i) {
-      total_row_num_ += memory_sort_round_[i].total_row_num_;
     }
     // final_merge = true is for performance optimization, the count of fragments is reduced to lower than merge_count_per_round,
     // then the last round of merge this fragment is skipped
