@@ -1281,7 +1281,9 @@ int ObLoadDataDirectDemo::do_load()
         return;
       }
       if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
-        ob_mutex3.lock();
+        if (thread_idx_block_writer != 0) {
+          break;
+        }
       }
       if (OB_FAIL(this->external_sort_.get_next_row(datum_row))) {
         // ob_mutex3.unlock();
@@ -1305,9 +1307,6 @@ int ObLoadDataDirectDemo::do_load()
           LOG_WARN("fail to append row", KR(ret));
         }
         // ob_mutex3.unlock();
-      }
-      if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
-        ob_mutex3.unlock();
       }
     }
     this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
