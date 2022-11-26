@@ -37,7 +37,7 @@ extern thread_local int thread_idx_block_writer;
 namespace storage
 {
 
-const int THREAD_NUM = 8;
+const int THREAD_NUM = 4;
 
 struct ObExternalSortConstant
 {
@@ -1256,6 +1256,8 @@ int ObExternalSortRound<T, Compare>::do_merge(
     STORAGE_LOG(INFO, "external sort do merge start");
     if (merge_count_ >= iters_.count()) {
       // this must be the final merge round
+      int cnt = iters_.count();
+      LOG_INFO("final round, iters_.count():", K(cnt));
       next_round.set_final_round_flag();
     }
     while (OB_SUCC(ret) && reader_idx < iters_.count()) {
@@ -1341,7 +1343,7 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     }
 
     if (OB_SUCC(ret)) {
-      if (remain_row_num != 0) {
+      if (remain_row_num != 0 || !next_round.is_final_round()) {
         if (OB_FAIL(next_round.build_fragment())) {
           STORAGE_LOG(WARN, "fail to build fragment", K(ret));
         }
