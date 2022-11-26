@@ -214,6 +214,7 @@ public:
   int init(const share::schema::ObTableSchema *table_schema);
   int append_row(const ObLoadDatumRow &datum_row);
   int close();
+  void close_macro();
 private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
   int init_macro_block_writer(const share::schema::ObTableSchema *table_schema);
@@ -230,7 +231,6 @@ public:
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_desc_[storage::THREAD_NUM];
   blocksstable::ObMacroBlockWriter *macro_block_writer_[storage::THREAD_NUM];
-  // blocksstable::ObMacroBlockWriter macro_block_writer_[storage::THREAD_NUM];
   blocksstable::ObDatumRow datum_row_[storage::THREAD_NUM];
   bool is_closed_;
   bool is_inited_;

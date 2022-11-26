@@ -18,6 +18,7 @@ namespace oceanbase
 
 thread_local int thread_idx_external_sort;
 thread_local int thread_idx_block_writer;
+thread_local int thread_idx_frag;
 
 namespace sql
 {
@@ -785,17 +786,7 @@ int ObLoadSSTableWriter::init_sstable_index_builder(const ObTableSchema *table_s
 int ObLoadSSTableWriter::init_macro_block_writer(const ObTableSchema *table_schema)
 {
   int ret = OB_SUCCESS;
-  // if (OB_FAIL(data_store_desc_.init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
-  //   LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
-  // } else {
-  //   data_store_desc_.sstable_index_builder_ = &sstable_index_builder_;
-  // }
   if (OB_SUCC(ret)) {
-    // ObMacroDataSeq data_seq;
-    // if (OB_FAIL(macro_block_writer_.open(data_store_desc_, data_seq))) {
-    //   LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
-    // }
-    // for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < storage::THREAD_NUM; ++i) {
       if (OB_FAIL(data_store_desc_[i].init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
         LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
@@ -944,6 +935,11 @@ int ObLoadSSTableWriter::close()
   return ret;
 }
 
+void ObLoadSSTableWriter::close_macro() {
+  macro_block_writer_[thread_idx_block_writer]->close();
+  delete macro_block_writer_[thread_idx_block_writer];
+}
+
 /**
  * ObLoadDataDirectDemo
  */
@@ -1027,21 +1023,6 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
       return ret;
     }
   }
-
-
-  // // init csv_parser_
-  // else if (OB_FAIL(csv_parser_.init(load_stmt.get_data_struct_in_file(), field_or_var_list_->count(),
-  //                                   load_args.file_cs_type_))) {
-  //   LOG_WARN("fail to init csv parser", KR(ret));
-  // }
-  // // init buffer_
-  // else if (OB_FAIL(buffer_.create(FILE_BUFFER_SIZE))) {
-  //   LOG_WARN("fail to create buffer", KR(ret));
-  // }
-  // else if (OB_FAIL(row_caster_.init(table_schema_, *field_or_var_list_))) {
-  //   LOG_WARN("fail to init row caster", KR(ret));
-  // }
-  // }
   return ret;
 }
 
@@ -1139,18 +1120,13 @@ int ObLoadDataDirectDemo::do_load()
               ob_mutex1.unlock();
               break;
             } else {
-              // ob_mutex2.lock();
               cast_time += ObTimeUtility::current_time_ns() - c_st_ts;
               int64_t e_st_ts = ObTimeUtility::current_time_ns();
-              // LOG_INFO("cast next row successfully");
               if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
-                // ob_mutex2.unlock();
                 ob_mutex1.lock();
                 ret_global = ret;
                 ob_mutex1.unlock();
-              // } else {
-                // ob_mutex2.unlock();
               }
               append_time += ObTimeUtility::current_time_ns() - e_st_ts;
             }
@@ -1172,7 +1148,6 @@ int ObLoadDataDirectDemo::do_load()
   int64_t pca_time = 0;
   int64_t start_ts = ObTimeUtility::current_time_ns();
   MyThreadPool thread_pool;
-  // thread_pool.set_thread_count(THREAD_NUM);
   thread_pool.set_run_wrapper(MTL_CTX());
   thread_pool.set_func(read_and_append1);
   if (OB_FAIL(thread_pool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
@@ -1187,40 +1162,6 @@ int ObLoadDataDirectDemo::do_load()
 
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
-  // while (OB_SUCC(ret)) {
-  //   if (OB_FAIL(buffer_.squash())) {
-  //     LOG_WARN("fail to squash buffer", KR(ret));
-  //   } else if (OB_FAIL(file_reader_.read_next_buffer(buffer_))) {
-  //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //       LOG_WARN("fail to read next buffer", KR(ret));
-  //     } else {
-  //       if (OB_UNLIKELY(!buffer_.empty())) {
-  //         ret = OB_ERR_UNEXPECTED;
-  //         LOG_WARN("unexpected incomplate data", KR(ret));
-  //       }
-  //       ret = OB_SUCCESS;
-  //       break;
-  //     }
-  //   } else if (OB_UNLIKELY(buffer_.empty())) {
-  //     ret = OB_ERR_UNEXPECTED;
-  //     LOG_WARN("unexpected empty buffer", KR(ret));
-  //   } else {
-  //     while (OB_SUCC(ret)) {
-  //       if (OB_FAIL(csv_parser_.get_next_row(buffer_, new_row))) {
-  //         if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //           LOG_WARN("fail to get next row", KR(ret));
-  //         } else {
-  //           ret = OB_SUCCESS;
-  //           break;
-  //         }
-  //       } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
-  //         LOG_WARN("fail to cast row", KR(ret));
-  //       } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
-  //         LOG_WARN("fail to append row", KR(ret));
-  //       }
-  //     }
-  //   }
-  // }
 
   int64_t get_row_time = 0;
   int64_t sstable_time = 0;
@@ -1233,24 +1174,6 @@ int ObLoadDataDirectDemo::do_load()
     start_ts = (ObTimeUtility::current_time_ns() - start_ts);
     LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
   }
-  // while (OB_SUCC(ret)) {
-  //   int64_t start_ts = ObTimeUtility::current_time_ns();
-  //   if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
-  //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //       LOG_WARN("fail to get next row", KR(ret));
-  //     } else {
-  //       ret = OB_SUCCESS;
-  //       break;
-  //     }
-  //   } else {
-  //     get_row_time += ObTimeUtility::current_time_ns() - start_ts;
-  //     start_ts = ObTimeUtility::current_time_ns();
-  //     if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
-  //       LOG_WARN("fail to append row", KR(ret));
-  //     }
-  //     sstable_time += ObTimeUtility::current_time_ns() - start_ts;
-  //   }
-  // }
 
   thread_idx_global = 0;
   ret_global = common::OB_SUCCESS;
@@ -1262,19 +1185,14 @@ int ObLoadDataDirectDemo::do_load()
     const ObLoadDatumRow *datum_row = nullptr;
 
     ob_mutex3.lock();
-    // thread_idx_block_writer = 1;
     thread_idx_block_writer = thread_idx_global;
     thread_idx_global++;
     ob_mutex3.unlock();
-
-
-    int cnt = 0;
+    
+    for (thread_idx_frag = 0; thread_idx_frag < THREAD_NUM; ++thread_idx_frag) {
 
     while (OB_SUCC(ret)) {
-      // ob_mutex3.lock();
       if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
-      // if (!OB_SUCC(ret_global)) {
-        // ob_mutex3.unlock();
         break;
       }
       if (this->external_sort_.is_empty()) {
@@ -1284,7 +1202,6 @@ int ObLoadDataDirectDemo::do_load()
         ob_mutex3.lock();
       }
       if (OB_FAIL(this->external_sort_.get_next_row(datum_row))) {
-        // ob_mutex3.unlock();
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
           LOG_WARN("fail to get next row", KR(ret));
         } else {
@@ -1295,51 +1212,27 @@ int ObLoadDataDirectDemo::do_load()
           break;
         }
       } else {
-        cnt++;
-        // if (cnt == 10 && thread_idx_block_writer != 1) {
-        //   break;
-        // }
-        // ob_mutex3.unlock();
-        // ob_mutex3.lock();
         if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));
         }
-        // ob_mutex3.unlock();
       }
       if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
         ob_mutex3.unlock();
       }
     }
-    this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
-    delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
+    }
+    sstable_writer_.close_macro();
   };
 
   MyThreadPool wpool;
   wpool.set_run_wrapper(MTL_CTX());
   wpool.set_func(get_and_write);
-  // if (OB_FAIL(wpool.init(1, 1))) {
-  if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
+  if (OB_FAIL(wpool.init(1, 1))) {
+  // if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }
   wpool.wait();
-  // sstable_writer_.macro_block_writer_[0].close();
-
-
-  // MyThreadPool wpool2;
-  // wpool2.set_run_wrapper(MTL_CTX());
-  // wpool2.set_func(get_and_write);
-  // if (OB_FAIL(wpool2.init(1, 1))) {
-  // // if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
-  //   LOG_WARN("fail to init get_and_write pool");
-  //   return ret;
-  // }
-  // wpool2.wait();
-  // sstable_writer_.macro_block_writer_[1].close();
-
-
-  // LOG_INFO("START TO CLOSE WRITER");
-
 
   start_ts = ObTimeUtility::current_time_ns();
   if (OB_SUCC(ret)) {

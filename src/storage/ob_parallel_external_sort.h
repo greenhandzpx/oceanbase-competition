@@ -26,13 +26,12 @@
 #include "share/config/ob_server_config.h"
 
 
-// #define THREAD_NUM 4
-
 namespace oceanbase
 {
 
 extern thread_local int thread_idx_external_sort;
 extern thread_local int thread_idx_block_writer;
+extern thread_local int thread_idx_frag;
 
 namespace storage
 {
@@ -1369,11 +1368,11 @@ int ObExternalSortRound<T, Compare>::get_next_item(const T *&item)
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
-  } else if (!merger_[thread_idx_block_writer].is_opened() && OB_FAIL(merger_[thread_idx_block_writer].open())) {
+  } else if (!merger_[thread_idx_frag].is_opened() && OB_FAIL(merger_[thread_idx_frag].open())) {
     STORAGE_LOG(WARN, "fail to open merger", K(ret));
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(merger_[thread_idx_block_writer].get_next_item(item))) {
+    if (OB_FAIL(merger_[thread_idx_frag].get_next_item(item))) {
       if (common::OB_ITER_END != ret) {
         STORAGE_LOG(WARN, "fail to get next item", K(ret));
       }
