@@ -785,21 +785,28 @@ int ObLoadSSTableWriter::init_sstable_index_builder(const ObTableSchema *table_s
 int ObLoadSSTableWriter::init_macro_block_writer(const ObTableSchema *table_schema)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(data_store_desc_.init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
-    LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
-  } else {
-    data_store_desc_.sstable_index_builder_ = &sstable_index_builder_;
-  }
+  // if (OB_FAIL(data_store_desc_.init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
+  //   LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
+  // } else {
+  //   data_store_desc_.sstable_index_builder_ = &sstable_index_builder_;
+  // }
   if (OB_SUCC(ret)) {
     // ObMacroDataSeq data_seq;
     // if (OB_FAIL(macro_block_writer_.open(data_store_desc_, data_seq))) {
     //   LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
     // }
+    // for (int i = 0; i < 1; ++i) {
     for (int i = 0; i < storage::THREAD_NUM; ++i) {
+      if (OB_FAIL(data_store_desc_[i].init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
+        LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
+        break;
+      }
+      data_store_desc_[i].sstable_index_builder_ = &sstable_index_builder_;
       ObMacroDataSeq data_seq;
       data_seq.set_parallel_degree(i);
-      if (OB_FAIL(macro_block_writer_[i].open(data_store_desc_, data_seq))) {
-        LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
+      macro_block_writer_[i] = new ObMacroBlockWriter;
+      if (OB_FAIL(macro_block_writer_[i]->open(data_store_desc_[i], data_seq))) {
+        LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_[i]), K(data_seq));
         break;
       }
     }
@@ -827,7 +834,7 @@ int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row)
         datum_row_[thread_idx_block_writer].storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
       }
     }
-    if (OB_FAIL(macro_block_writer_[thread_idx_block_writer].append_row(datum_row_[thread_idx_block_writer]))) {
+    if (OB_FAIL(macro_block_writer_[thread_idx_block_writer]->append_row(datum_row_[thread_idx_block_writer]))) {
     // if (OB_FAIL(macro_block_writer_.append_row(datum_row_))) {
       LOG_WARN("fail to append row", KR(ret));
     }
@@ -914,11 +921,12 @@ int ObLoadSSTableWriter::close()
     LOG_WARN("unexpected closed sstable writer", KR(ret));
   } else {
     ObSSTable *sstable = nullptr;
-    for (int i = 0; i < storage::THREAD_NUM; ++i) {
-      if (OB_FAIL(macro_block_writer_[i].close())) {
-        LOG_WARN("fail to close macro block writer", KR(ret));
-      }
-    }
+    // for (int i = 0; i < 1; ++i) {
+    // for (int i = 0; i < storage::THREAD_NUM; ++i) {
+    //   if (OB_FAIL(macro_block_writer_[i].close())) {
+    //     LOG_WARN("fail to close macro block writer", KR(ret));
+    //   }
+    // }
     if (OB_FAIL(create_sstable())) {
       LOG_WARN("fail to create sstable", KR(ret));
     } else {
@@ -1254,6 +1262,7 @@ int ObLoadDataDirectDemo::do_load()
     const ObLoadDatumRow *datum_row = nullptr;
 
     ob_mutex3.lock();
+    // thread_idx_block_writer = 1;
     thread_idx_block_writer = thread_idx_global;
     thread_idx_global++;
     ob_mutex3.unlock();
@@ -1268,50 +1277,68 @@ int ObLoadDataDirectDemo::do_load()
         // ob_mutex3.unlock();
         break;
       }
-      if (external_sort_.is_empty()) {
+      if (this->external_sort_.is_empty()) {
         return;
       }
-      if (!external_sort_.is_empty() && external_sort_.is_in_memory()) {
+      if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
         ob_mutex3.lock();
       }
-      if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
+      if (OB_FAIL(this->external_sort_.get_next_row(datum_row))) {
         // ob_mutex3.unlock();
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
           LOG_WARN("fail to get next row", KR(ret));
         } else {
           ret = OB_SUCCESS;
-          if (!external_sort_.is_empty() && external_sort_.is_in_memory()) {
+          if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
             ob_mutex3.unlock();
           }
           break;
         }
       } else {
         cnt++;
-        // if (cnt == 300000) {
+        // if (cnt == 10 && thread_idx_block_writer != 1) {
         //   break;
         // }
         // ob_mutex3.unlock();
-        if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
+        // ob_mutex3.lock();
+        if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));
         }
+        // ob_mutex3.unlock();
       }
-      if (!external_sort_.is_empty() && external_sort_.is_in_memory()) {
+      if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
         ob_mutex3.unlock();
       }
     }
+    this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
+    delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
   };
 
   MyThreadPool wpool;
   wpool.set_run_wrapper(MTL_CTX());
   wpool.set_func(get_and_write);
+  // if (OB_FAIL(wpool.init(1, 1))) {
   if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }
-
   wpool.wait();
+  // sstable_writer_.macro_block_writer_[0].close();
 
-  LOG_INFO("START TO CLOSE WRITER");
+
+  // MyThreadPool wpool2;
+  // wpool2.set_run_wrapper(MTL_CTX());
+  // wpool2.set_func(get_and_write);
+  // if (OB_FAIL(wpool2.init(1, 1))) {
+  // // if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
+  //   LOG_WARN("fail to init get_and_write pool");
+  //   return ret;
+  // }
+  // wpool2.wait();
+  // sstable_writer_.macro_block_writer_[1].close();
+
+
+  // LOG_INFO("START TO CLOSE WRITER");
 
 
   start_ts = ObTimeUtility::current_time_ns();

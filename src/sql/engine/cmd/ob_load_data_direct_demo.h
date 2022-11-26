@@ -218,7 +218,7 @@ private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
   int init_macro_block_writer(const share::schema::ObTableSchema *table_schema);
   int create_sstable();
-private:
+public:
   common::ObTabletID tablet_id_;
   storage::ObTabletHandle tablet_handle_;
   share::ObLSID ls_id_;
@@ -228,8 +228,9 @@ private:
   int64_t column_count_;
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
-  blocksstable::ObDataStoreDesc data_store_desc_;
-  blocksstable::ObMacroBlockWriter macro_block_writer_[storage::THREAD_NUM];
+  blocksstable::ObDataStoreDesc data_store_desc_[storage::THREAD_NUM];
+  blocksstable::ObMacroBlockWriter *macro_block_writer_[storage::THREAD_NUM];
+  // blocksstable::ObMacroBlockWriter macro_block_writer_[storage::THREAD_NUM];
   blocksstable::ObDatumRow datum_row_[storage::THREAD_NUM];
   bool is_closed_;
   bool is_inited_;
