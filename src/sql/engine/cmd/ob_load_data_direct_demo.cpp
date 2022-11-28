@@ -1186,10 +1186,9 @@ int ObLoadDataDirectDemo::do_load()
 
     ob_mutex3.lock();
     thread_idx_block_writer = thread_idx_global;
+    thread_idx_frag = thread_idx_global;
     thread_idx_global++;
     ob_mutex3.unlock();
-    
-    for (thread_idx_frag = 0; thread_idx_frag < THREAD_NUM; ++thread_idx_frag) {
 
     while (OB_SUCC(ret)) {
       if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
@@ -1220,15 +1219,13 @@ int ObLoadDataDirectDemo::do_load()
         ob_mutex3.unlock();
       }
     }
-    }
     sstable_writer_.close_macro();
   };
 
   MyThreadPool wpool;
   wpool.set_run_wrapper(MTL_CTX());
   wpool.set_func(get_and_write);
-  if (OB_FAIL(wpool.init(1, 1))) {
-  // if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
+  if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }
