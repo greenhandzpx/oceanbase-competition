@@ -37,7 +37,8 @@ extern thread_local int thread_idx_block_writer;
 namespace storage
 {
 
-const int THREAD_NUM = 8;
+const int THREAD_NUM = 4;
+const int THREAD_NUM_FINAL_MERGE = 8;
 
 struct ObExternalSortConstant
 {
@@ -932,6 +933,11 @@ int ObFragmentMerge<T, Compare>::heap_get_next_item(const T *&item)
         STORAGE_LOG(WARN, "fail to compare items", K(ret));
       } else {
         STORAGE_LOG(DEBUG, "pop a heap item");
+        if (OB_FAIL(iter->clean_up())) {
+          STORAGE_LOG(WARN, "fail to clean up iter");
+        } else {
+          STORAGE_LOG(INFO, "clean up an iter");
+        }
       }
     } else if (NULL == heap_item.item_) {
       ret = common::OB_ERR_UNEXPECTED;
@@ -1031,7 +1037,7 @@ private:
   FragmentWriter writer_;
   int64_t expire_timestamp_;
   Compare *compare_;
-  FragmentMerger merger_[THREAD_NUM];
+  FragmentMerger merger_[THREAD_NUM_FINAL_MERGE];
   common::ObArenaAllocator allocator_;
   uint64_t tenant_id_;
   int64_t dir_id_;
@@ -1082,7 +1088,9 @@ int ObExternalSortRound<T, Compare>::init(
     compare_ = compare;
     tenant_id_ = tenant_id;
     is_writer_opened_ = false;
-    for (int i = 0; i < THREAD_NUM; ++i) {
+    total_row_num_ = 0;
+    is_final_round_ = false;
+    for (int i = 0; i < THREAD_NUM_FINAL_MERGE; ++i) {
       merger_[i].reset();
     }
   }
@@ -1191,6 +1199,7 @@ int ObExternalSortRound<T, Compare>::transfer_all_fragment_iters(
     for (int i = 0; i < iters_.size(); ++i) {
       if (OB_FAIL(dest_round.add_fragment_iter(iters_.at(i)))) {
         STORAGE_LOG(WARN, "fail to add fragment iterator", K(ret));
+        break;
       }
     }
     // iter will be freed in dest_round
@@ -1211,7 +1220,7 @@ int ObExternalSortRound<T, Compare>::build_merger()
   if (is_final_round_) {
     int cnt = iters_.count();
     LOG_INFO("external sort build merger", LITERAL_K(cnt));
-    for (int i = 0; i < THREAD_NUM; ++i) {
+    for (int i = 0; i < THREAD_NUM_FINAL_MERGE; ++i) {
       if (i >= iters_.count()) {
         break;
       }
@@ -1292,8 +1301,8 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     const int64_t end_reader_idx = std::min(start_reader_idx + merge_count_, iters_.count());
     FragmentIteratorList iters;
     int64_t cnt = 0;
-    int64_t row_num_per_frag = total_row_num_ / THREAD_NUM;
-    int64_t remain_row_num = total_row_num_ % THREAD_NUM;
+    int64_t row_num_per_frag = total_row_num_ / THREAD_NUM_FINAL_MERGE;
+    int64_t remain_row_num = total_row_num_ % THREAD_NUM_FINAL_MERGE;
     if (remain_row_num != 0) {
       row_num_per_frag++;
     }
@@ -1325,7 +1334,7 @@ int ObExternalSortRound<T, Compare>::do_one_run(
         if (OB_FAIL(next_round.add_item(*item))) {
           STORAGE_LOG(WARN, "fail to add item", K(ret));
         } else {
-          if (next_round.is_final_round()) {
+          if (true || next_round.is_final_round()) {
             cnt++;
             if (cnt % row_num_per_frag == 0) {
               // every `row_num_per_frag` rows will construct a fragment
@@ -1343,7 +1352,7 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     }
 
     if (OB_SUCC(ret)) {
-      if (remain_row_num != 0 || !next_round.is_final_round()) {
+      if (remain_row_num != 0 /*|| !next_round.is_final_round()*/) {
         if (OB_FAIL(next_round.build_fragment())) {
           STORAGE_LOG(WARN, "fail to build fragment", K(ret));
         }
@@ -1353,9 +1362,13 @@ int ObExternalSortRound<T, Compare>::do_one_run(
     for (int64_t i = start_reader_idx; i < end_reader_idx; ++i) {
       if (nullptr != iters_[i]) {
         // will do clean up ignore return
-        if (common::OB_SUCCESS != (tmp_ret = iters_[i]->clean_up())) {
-          STORAGE_LOG(WARN, "fail to do reader clean up", K(tmp_ret), K(i));
-        }
+
+        /**
+         * no need to clean up here since they have been cleaned up in the heap sort(i.e. FragmentMerge)
+        */
+        // if (common::OB_SUCCESS != (tmp_ret = iters_[i]->clean_up())) {
+        //   STORAGE_LOG(WARN, "fail to do reader clean up", K(tmp_ret), K(i));
+        // }
         iters_[i]->~ObFragmentIterator();
         iters_[i] = nullptr;
       }
@@ -1434,7 +1447,7 @@ int ObExternalSortRound<T, Compare>::clean_up()
   iters_.reset();
   expire_timestamp_ = 0;
   compare_ = NULL;
-  for (int i = 0; i < THREAD_NUM; ++i) {
+  for (int i = 0; i < THREAD_NUM_FINAL_MERGE; ++i) {
     merger_[i].reset();
   }
   allocator_.reset();
@@ -1978,6 +1991,7 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
       const int64_t start_time = common::ObTimeUtility::current_time();
       STORAGE_LOG(INFO, "do sort start round", K(round_id));
+      LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
       if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
           expire_timestamp_, tenant_id_, compare_))) {
         STORAGE_LOG(WARN, "fail to init next sort round", K(ret));

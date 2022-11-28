@@ -1316,8 +1316,8 @@ int ObLoadDataDirectDemo::do_load()
   MyThreadPool wpool;
   wpool.set_run_wrapper(MTL_CTX());
   wpool.set_func(get_and_write);
-  // if (OB_FAIL(wpool.init(1, 1))) {
-  if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
+  if (OB_FAIL(wpool.init(1, 1))) {
+  // if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }
