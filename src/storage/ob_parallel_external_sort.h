@@ -38,7 +38,7 @@ namespace storage
 {
 
 const int THREAD_NUM = 8;
-const int THREAD_NUM_FINAL_MERGE = 8;
+const int THREAD_NUM_FINAL_MERGE = 4;
 
 struct ObExternalSortConstant
 {
