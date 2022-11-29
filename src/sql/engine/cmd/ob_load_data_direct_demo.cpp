@@ -1291,9 +1291,6 @@ int ObLoadDataDirectDemo::do_load()
           LOG_WARN("fail to get next row", KR(ret));
         } else {
           ret = OB_SUCCESS;
-          if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
-            ob_mutex3.unlock();
-          }
           break;
         }
       } else {
@@ -1316,6 +1313,10 @@ int ObLoadDataDirectDemo::do_load()
   MyThreadPool wpool;
   wpool.set_run_wrapper(MTL_CTX());
   wpool.set_func(get_and_write);
+
+
+
+  start_ts = ObTimeUtility::current_time_ns();
   // if (OB_FAIL(wpool.init(1, 1))) {
   if (OB_FAIL(wpool.init(storage::THREAD_NUM_FINAL_MERGE, storage::THREAD_NUM_FINAL_MERGE))) {
     LOG_WARN("fail to init get_and_write pool");
@@ -1338,7 +1339,8 @@ int ObLoadDataDirectDemo::do_load()
 
 
   // LOG_INFO("START TO CLOSE WRITER");
-
+  sstable_time = ObTimeUtility::current_time_ns() - start_ts;
+  LOG_INFO("sstable append row time(ns):", LITERAL_K(sstable_time));
 
   start_ts = ObTimeUtility::current_time_ns();
   if (OB_SUCC(ret)) {
@@ -1347,8 +1349,7 @@ int ObLoadDataDirectDemo::do_load()
     }
   }
   int64_t close_time = ObTimeUtility::current_time_ns() - start_ts;
-  LOG_INFO("external sort get row time(ns):", LITERAL_K(get_row_time));
-  LOG_INFO("sstable time(ns):", LITERAL_K(sstable_time));
+  // LOG_INFO("external sort get row time(ns):", LITERAL_K(get_row_time));
   LOG_INFO("sstable close time(ns):", LITERAL_K(close_time));
 
   return ret;
