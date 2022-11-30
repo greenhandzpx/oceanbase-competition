@@ -39,6 +39,7 @@ namespace storage
 
 const int THREAD_NUM = 8;
 const int THREAD_NUM_FINAL_MERGE = 4;
+const int EXTERNAL_SORT_BUCKET_NUM = 4;
 
 struct ObExternalSortConstant
 {
@@ -1988,26 +1989,26 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     for (int i = 1; i < THREAD_NUM; ++i) {
       curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
     }
-    while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
-      const int64_t start_time = common::ObTimeUtility::current_time();
-      STORAGE_LOG(INFO, "do sort start round", K(round_id));
-      LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
-      if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
-          expire_timestamp_, tenant_id_, compare_))) {
-        STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
-        STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
-        STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->clean_up())) {
-        STORAGE_LOG(WARN, "fail to do clean up of current round", K(ret));
-      } else {
-        std::swap(curr_round_[0], next_round_);
-        const int64_t round_cost_time = common::ObTimeUtility::current_time() - start_time;
-        STORAGE_LOG(INFO, "do sort end round", K(round_id), K(round_cost_time));
-        ++round_id;
-      }
-    }
+    // while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
+    //   const int64_t start_time = common::ObTimeUtility::current_time();
+    //   STORAGE_LOG(INFO, "do sort start round", K(round_id));
+    //   LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
+    //   if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
+    //       expire_timestamp_, tenant_id_, compare_))) {
+    //     STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
+    //     STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
+    //     STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->clean_up())) {
+    //     STORAGE_LOG(WARN, "fail to do clean up of current round", K(ret));
+    //   } else {
+    //     std::swap(curr_round_[0], next_round_);
+    //     const int64_t round_cost_time = common::ObTimeUtility::current_time() - start_time;
+    //     STORAGE_LOG(INFO, "do sort end round", K(round_id), K(round_cost_time));
+    //     ++round_id;
+    //   }
+    // }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(curr_round_[0]->build_merger())) {

@@ -253,7 +253,7 @@ public:
   ObLoadDataBuffer buffer_[storage::THREAD_NUM];
   ObLoadRowCaster row_caster_[storage::THREAD_NUM];
   int thread_idx_;
-  ObLoadExternalSort external_sort_;
+  ObLoadExternalSort external_sort_[storage::EXTERNAL_SORT_BUCKET_NUM];
   ObLoadSSTableWriter sstable_writer_;
   ObIArray<ObLoadDataStmt::FieldOrVarStruct> *field_or_var_list_;
   const ObLoadArgument *load_args_ = nullptr;

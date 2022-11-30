@@ -28,6 +28,9 @@ using namespace observer;
 using namespace share;
 using namespace share::schema;
 
+
+const int64_t max_primary_key = 300000000;
+
 /**
  * ObLoadDataBuffer
  */
@@ -643,8 +646,8 @@ int ObLoadExternalSort::close()
   } else if (OB_UNLIKELY(is_closed_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("unexpected closed external sort", KR(ret));
-  } else if (OB_FAIL(external_sort_.do_sort(false))) {
-  // } else if (OB_FAIL(external_sort_.do_sort(true))) {
+  // } else if (OB_FAIL(external_sort_.do_sort(false))) {
+  } else if (OB_FAIL(external_sort_.do_sort(true))) {
     LOG_WARN("fail to do sort", KR(ret));
   } else {
     is_closed_ = true;
@@ -999,13 +1002,20 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   else if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
     LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
   }
-  // init external_sort_
-  else if (OB_FAIL(external_sort_.init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
-    LOG_WARN("fail to init row caster", KR(ret));
-  }
+  // // init external_sort_
+  // else if (OB_FAIL(external_sort_.init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+  //   LOG_WARN("fail to init row caster", KR(ret));
+  // }
   // init sstable_writer_
   else if (OB_FAIL(sstable_writer_.init(table_schema_))) {
     LOG_WARN("fail to init sstable writer", KR(ret));
+  }
+
+  for (int i = 0; i < storage::EXTERNAL_SORT_BUCKET_NUM; ++i) {
+    if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+      LOG_WARN("fail to init external sort", KR(ret));
+      return ret;
+    }
   }
 
 
@@ -1077,6 +1087,7 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_global++;
     ob_mutex1.unlock();
 
+    int64_t bucket_interval = max_primary_key / storage::EXTERNAL_SORT_BUCKET_NUM;
 
     while (true) {
       ob_mutex1.lock();
@@ -1143,7 +1154,19 @@ int ObLoadDataDirectDemo::do_load()
               cast_time += ObTimeUtility::current_time_ns() - c_st_ts;
               int64_t e_st_ts = ObTimeUtility::current_time_ns();
               // LOG_INFO("cast next row successfully");
-              if (OB_FAIL(this->external_sort_.append_row(*datum_row))) {
+
+              // get the primary key and decide which bucket it should belong to
+              int64_t primary_key = *datum_row->datums_[0].int_;
+
+              LOG_INFO("primary key:", K(primary_key));
+
+              int idx = primary_key / bucket_interval; 
+
+              if (idx >= storage::EXTERNAL_SORT_BUCKET_NUM) {
+                idx = storage::EXTERNAL_SORT_BUCKET_NUM;
+              }
+
+              if (OB_FAIL(this->external_sort_[idx].append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
                 // ob_mutex2.unlock();
                 ob_mutex1.lock();
@@ -1159,6 +1182,7 @@ int ObLoadDataDirectDemo::do_load()
         }
       }
     }
+
     ob_mutex1.lock();
     LOG_INFO("thread idx ", LITERAL_K(thread_idx));
     LOG_INFO("parser time(ns):", LITERAL_K(parser_time));
@@ -1224,15 +1248,15 @@ int ObLoadDataDirectDemo::do_load()
 
   int64_t get_row_time = 0;
   int64_t sstable_time = 0;
-  if (OB_SUCC(ret)) {
-    LOG_INFO("start to close external sort");
-    int64_t start_ts = ObTimeUtility::current_time_ns();
-    if (OB_FAIL(external_sort_.close())) {
-      LOG_WARN("fail to close external sort", KR(ret));
-    }
-    start_ts = (ObTimeUtility::current_time_ns() - start_ts);
-    LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
-  }
+  // if (OB_SUCC(ret)) {
+  //   LOG_INFO("start to close external sort");
+  //   int64_t start_ts = ObTimeUtility::current_time_ns();
+  //   if (OB_FAIL(external_sort_.close())) {
+  //     LOG_WARN("fail to close external sort", KR(ret));
+  //   }
+  //   start_ts = (ObTimeUtility::current_time_ns() - start_ts);
+  //   LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
+  // }
   // while (OB_SUCC(ret)) {
   //   int64_t start_ts = ObTimeUtility::current_time_ns();
   //   if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
@@ -1258,6 +1282,8 @@ int ObLoadDataDirectDemo::do_load()
 
   auto get_and_write = [&thread_idx_global, &ret_global, &ob_mutex3, this](){
     int ret = OB_SUCCESS;
+
+
     const ObNewRow *new_row = nullptr;
     const ObLoadDatumRow *datum_row = nullptr;
 
@@ -1267,6 +1293,9 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_global++;
     ob_mutex3.unlock();
 
+    if (OB_FAIL(external_sort_[thread_idx_block_writer].close())) {
+      LOG_WARN("fail to close external sort", KR(ret));
+    }
 
     int cnt = 0;
 
@@ -1277,15 +1306,15 @@ int ObLoadDataDirectDemo::do_load()
         // ob_mutex3.unlock();
         break;
       }
-      if (this->external_sort_.is_empty()) {
+      if (this->external_sort_[thread_idx_block_writer].is_empty()) {
         return;
       }
-      if (!this->external_sort_.is_empty() && this->external_sort_.is_in_memory()) {
+      if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
         if (thread_idx_block_writer != 0) {
           break;
         }
       }
-      if (OB_FAIL(this->external_sort_.get_next_row(datum_row))) {
+      if (OB_FAIL(this->external_sort_[thread_idx_block_writer].get_next_row(datum_row))) {
         // ob_mutex3.unlock();
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
           LOG_WARN("fail to get next row", KR(ret));
@@ -1318,7 +1347,7 @@ int ObLoadDataDirectDemo::do_load()
 
   start_ts = ObTimeUtility::current_time_ns();
   // if (OB_FAIL(wpool.init(1, 1))) {
-  if (OB_FAIL(wpool.init(storage::THREAD_NUM_FINAL_MERGE, storage::THREAD_NUM_FINAL_MERGE))) {
+  if (OB_FAIL(wpool.init(storage::EXTERNAL_SORT_BUCKET_NUM, storage::EXTERNAL_SORT_BUCKET_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }
