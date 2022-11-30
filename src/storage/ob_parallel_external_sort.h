@@ -38,7 +38,7 @@ namespace storage
 {
 
 const int THREAD_NUM = 8;
-const int THREAD_NUM_FINAL_MERGE = 4;
+const int THREAD_NUM_FINAL_MERGE = 8;
 
 struct ObExternalSortConstant
 {
@@ -1334,17 +1334,15 @@ int ObExternalSortRound<T, Compare>::do_one_run(
         if (OB_FAIL(next_round.add_item(*item))) {
           STORAGE_LOG(WARN, "fail to add item", K(ret));
         } else {
-          if (true || next_round.is_final_round()) {
-            cnt++;
-            if (cnt % row_num_per_frag == 0) {
-              // every `row_num_per_frag` rows will construct a fragment
-              int row_num = total_row_num_;
-              LOG_INFO("final run total row num", LITERAL_K(row_num));
-              LOG_INFO("final run info", LITERAL_K(row_num_per_frag));
-              LOG_INFO("final run build a new frag", LITERAL_K(cnt));
-              if (OB_FAIL(next_round.build_fragment())) {
-                STORAGE_LOG(WARN, "fail to build fragment", K(ret));
-              }
+          cnt++;
+          if (cnt % row_num_per_frag == 0) {
+            // every `row_num_per_frag` rows will construct a fragment
+            int row_num = total_row_num_;
+            LOG_INFO("final run total row num", LITERAL_K(row_num));
+            LOG_INFO("final run info", LITERAL_K(row_num_per_frag));
+            LOG_INFO("final run build a new frag", LITERAL_K(cnt));
+            if (OB_FAIL(next_round.build_fragment())) {
+              STORAGE_LOG(WARN, "fail to build fragment", K(ret));
             }
           }
         }
@@ -1890,7 +1888,8 @@ int ObExternalSort<T, Compare>::init(
     file_buf_size_ = common::lower_align(file_buf_size, macro_block_size);
     buf_mem_limit_ = mem_limit;
     expire_timestamp_ = expire_timestamp;
-    merge_count_per_round_ = buf_mem_limit_ / file_buf_size_ / 2;
+    // merge_count_per_round_ = buf_mem_limit_ / file_buf_size_ / 2;
+    merge_count_per_round_ = buf_mem_limit_ / file_buf_size_ / 8;
     compare_ = compare;
     tenant_id_ = tenant_id;
     for (int i = 0; i < THREAD_NUM; ++i) {
