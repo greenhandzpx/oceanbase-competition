@@ -1192,18 +1192,30 @@ int ObLoadDataDirectDemo::do_load()
     start_ts = (ObTimeUtility::current_time_ns() - start_ts);
     LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
   }
+  int64_t ext_get_next_row_time = 0;
+  int64_t sstable_append_row_time = 0;
+  int64_t start_ts = ObTimeUtility::current_time_ns();
   while (OB_SUCC(ret)) {
+    start_ts = ObTimeUtility::current_time_ns();
     if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
       if (OB_UNLIKELY(OB_ITER_END != ret)) {
         LOG_WARN("fail to get next row", KR(ret));
       } else {
         ret = OB_SUCCESS;
-        break;
       }
-    } else if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
+      break;
+    } 
+    ext_get_next_row_time += ObTimeUtility::current_time_ns() - start_ts;
+    start_ts = ObTimeUtility::current_time_ns();
+    if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
       LOG_WARN("fail to append row", KR(ret));
     }
+    sstable_append_row_time += ObTimeUtility::current_time_ns() - start_ts; 
   }
+
+  LOG_INFO("ext get next row time(ns):", LITERAL_K(ext_get_next_row_time));
+  LOG_INFO("sstable append row time(ns):", LITERAL_K(sstable_append_row_time));
+
   if (OB_SUCC(ret)) {
     if (OB_FAIL(sstable_writer_.close())) {
       LOG_WARN("fail to close sstable writer", KR(ret));
