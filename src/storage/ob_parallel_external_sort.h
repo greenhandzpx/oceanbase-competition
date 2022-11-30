@@ -1389,7 +1389,8 @@ int ObExternalSortRound<T, Compare>::get_next_item(const T *&item)
     STORAGE_LOG(WARN, "fail to open merger", K(ret));
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(merger_[thread_idx_block_writer].get_next_item(item))) {
+    if (OB_FAIL(merger_[0].get_next_item(item))) {
+    // if (OB_FAIL(merger_[thread_idx_block_writer].get_next_item(item))) {
       if (common::OB_ITER_END != ret) {
         STORAGE_LOG(WARN, "fail to get next item", K(ret));
       }
