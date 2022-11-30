@@ -1163,7 +1163,7 @@ int ObLoadDataDirectDemo::do_load()
               int idx = primary_key / bucket_interval; 
 
               if (idx >= storage::EXTERNAL_SORT_BUCKET_NUM) {
-                idx = storage::EXTERNAL_SORT_BUCKET_NUM;
+                idx = storage::EXTERNAL_SORT_BUCKET_NUM - 1;
               }
 
               if (OB_FAIL(this->external_sort_[idx].append_row(*datum_row))) {
