@@ -30,6 +30,7 @@ using namespace share::schema;
 
 
 const int64_t max_primary_key = 300000000;
+// const int64_t max_primary_key = 6000000;
 
 /**
  * ObLoadDataBuffer
@@ -1158,7 +1159,7 @@ int ObLoadDataDirectDemo::do_load()
               // get the primary key and decide which bucket it should belong to
               int64_t primary_key = *datum_row->datums_[0].int_;
 
-              LOG_INFO("primary key:", K(primary_key));
+              // LOG_INFO("primary key:", K(primary_key));
 
               int idx = primary_key / bucket_interval; 
 
@@ -1309,11 +1310,11 @@ int ObLoadDataDirectDemo::do_load()
       if (this->external_sort_[thread_idx_block_writer].is_empty()) {
         return;
       }
-      if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
-        if (thread_idx_block_writer != 0) {
-          break;
-        }
-      }
+      // if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
+      //   if (thread_idx_block_writer != 0) {
+      //     break;
+      //   }
+      // }
       if (OB_FAIL(this->external_sort_[thread_idx_block_writer].get_next_row(datum_row))) {
         // ob_mutex3.unlock();
         if (OB_UNLIKELY(OB_ITER_END != ret)) {

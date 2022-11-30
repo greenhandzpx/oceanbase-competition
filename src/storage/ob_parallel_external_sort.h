@@ -1218,24 +1218,27 @@ int ObExternalSortRound<T, Compare>::build_merger()
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
     return ret;
   }
-  if (is_final_round_) {
-    int cnt = iters_.count();
-    LOG_INFO("external sort build merger", LITERAL_K(cnt));
-    for (int i = 0; i < THREAD_NUM_FINAL_MERGE; ++i) {
-      if (i >= iters_.count()) {
-        break;
-      }
-      common::ObSEArray<FragmentIterator *, 1> iter_arr;
-      iter_arr.push_back(iters_.at(i));
-      if (OB_FAIL(merger_[i].init(iter_arr, compare_))) {
-        STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
-      }
-    }
-  } else {
-    if (OB_FAIL(merger_[0].init(iters_, compare_))) {
-      STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
-    }
+  if (OB_FAIL(merger_[0].init(iters_, compare_))) {
+    STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
   }
+  // if (is_final_round_) {
+  //   int cnt = iters_.count();
+  //   LOG_INFO("external sort build merger", LITERAL_K(cnt));
+  //   for (int i = 0; i < THREAD_NUM_FINAL_MERGE; ++i) {
+  //     if (i >= iters_.count()) {
+  //       break;
+  //     }
+  //     common::ObSEArray<FragmentIterator *, 1> iter_arr;
+  //     iter_arr.push_back(iters_.at(i));
+  //     if (OB_FAIL(merger_[i].init(iter_arr, compare_))) {
+  //       STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
+  //     }
+  //   }
+  // } else {
+  //   if (OB_FAIL(merger_[0].init(iters_, compare_))) {
+  //     STORAGE_LOG(WARN, "fail to init FragmentMerger", K(ret));
+  //   }
+  // }
   return ret;
 }
 
@@ -1385,7 +1388,8 @@ int ObExternalSortRound<T, Compare>::get_next_item(const T *&item)
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSortRound has not been inited", K(ret));
-  } else if (!merger_[thread_idx_block_writer].is_opened() && OB_FAIL(merger_[thread_idx_block_writer].open())) {
+  } else if (!merger_[0].is_opened() && OB_FAIL(merger_[0].open())) {
+  // } else if (!merger_[thread_idx_block_writer].is_opened() && OB_FAIL(merger_[thread_idx_block_writer].open())) {
     STORAGE_LOG(WARN, "fail to open merger", K(ret));
   }
   if (OB_SUCC(ret)) {
