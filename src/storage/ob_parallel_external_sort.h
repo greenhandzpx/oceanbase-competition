@@ -24,6 +24,9 @@
 #include "blocksstable/ob_block_sstable_struct.h"
 #include "blocksstable/ob_tmp_file.h"
 #include "share/config/ob_server_config.h"
+#include "lib/lock/ob_mutex.h"
+#include "lib/stat/ob_session_stat.h"
+#include "share/rc/ob_tenant_base.h"
 
 
 // #define THREAD_NUM 4
@@ -39,6 +42,49 @@ namespace storage
 
 const int THREAD_NUM = 8;
 const int THREAD_NUM_FINAL_MERGE = 4;
+const int THREAD_NUM_FIRST_MERGE = 4;
+
+using namespace common;
+using namespace lib;
+using namespace share;
+
+class MyThreadPool: public common::ObSimpleThreadPool {
+public:
+    void run1() override 
+    {
+      ObTenantStatEstGuard state_est_guard(MTL_ID());
+      ObTenantBase *tenant_base = MTL_CTX();
+      Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
+      Worker::set_compatibility_mode(mode);
+
+      // common::ObSimpleThreadPool::run1();
+      func_();
+    }
+    void handle(void *task) override 
+    {
+      // 不用看这个函数，用不到（乐）
+      if (task == nullptr) {
+          // handle stop
+          return;
+      }
+      (*(void(*)(void*))task)(args_);
+    }
+
+    void set_args(void *args)
+    {
+      args_ = args;
+    }
+
+    void set_func(const std::function<void()> &func) 
+    {
+      func_ = func;
+    }
+private:
+    void *args_; // the global args used by all threads
+    std::function<void()> func_;
+};
+
+
 
 struct ObExternalSortConstant
 {
@@ -1024,6 +1070,8 @@ public:
   int set_total_row_num(int64_t total_row_num);
   int set_final_round_flag();
   bool is_final_round() { return is_final_round_; }
+  int do_merge_thread();
+  int do_first_merge(ObExternalSortRound **next_round);
 private:
   typedef ObFragmentReaderV2<T> FragmentReader;
   typedef ObFragmentIterator<T> FragmentIterator;
@@ -1286,6 +1334,38 @@ int ObExternalSortRound<T, Compare>::do_merge(
   }
   return ret;
 }
+
+template<typename T, typename Compare>
+int ObExternalSortRound<T, Compare>::do_first_merge(ObExternalSortRound **next_round)
+{
+  return common::OB_SUCCESS;
+  // int thread_idx_global = 0;
+  // ObMutex mutex;
+  // auto do_merge_thread = [this, &mutex, &thread_idx_global, next_round](){
+
+  //   int thread_idx;
+  //   mutex.lock();
+  //   thread_idx = thread_idx_global;
+  //   thread_idx_global++;
+  //   mutex.unlock();
+
+  //   this->do_merge(*next_round[thread_idx]);
+  // };
+
+  
+  // MyThreadPool wpool;
+  // wpool.set_run_wrapper(MTL_CTX());
+  // wpool.set_func(do_merge_thread);
+
+  // start_ts = ObTimeUtility::current_time_ns();
+  // // if (OB_FAIL(wpool.init(1, 1))) {
+  // if (OB_FAIL(wpool.init(storage::THREAD_NUM_FIRST_MERGE, storage::THREAD_NUM_FIRST_MERGE))) {
+  //   LOG_WARN("fail to init get_and_write pool");
+  //   return ret;
+  // }
+  // wpool.wait();
+}
+
 
 template<typename T, typename Compare>
 int ObExternalSortRound<T, Compare>::do_one_run(
@@ -1823,7 +1903,7 @@ public:
   bool is_empty();
 private:
   // one for next_round_, the others for curr_round_
-  static const int64_t EXTERNAL_SORT_ROUND_CNT = THREAD_NUM + 1;
+  static const int64_t EXTERNAL_SORT_ROUND_CNT = THREAD_NUM * 2;
   // static const int64_t EXTERNAL_SORT_ROUND_CNT = 2;
   bool is_inited_;
   int64_t file_buf_size_;
@@ -1834,7 +1914,7 @@ private:
   MemorySortRound memory_sort_round_[THREAD_NUM];
   ExternalSortRound sort_rounds_[EXTERNAL_SORT_ROUND_CNT];
   ExternalSortRound *curr_round_[THREAD_NUM];
-  ExternalSortRound *next_round_;
+  ExternalSortRound *next_round_[THREAD_NUM];
   bool is_empty_;
   uint64_t tenant_id_;
   int64_t total_row_num_;
@@ -1895,8 +1975,8 @@ int ObExternalSort<T, Compare>::init(
     tenant_id_ = tenant_id;
     for (int i = 0; i < THREAD_NUM; ++i) {
       curr_round_[i] = &sort_rounds_[i];
+      next_round_[i] = &sort_rounds_[i + THREAD_NUM];
     }
-    next_round_ = &sort_rounds_[THREAD_NUM];
     is_empty_ = true;
     if (merge_count_per_round_ < ObExternalSortConstant::MIN_MULTIPLE_MERGE_COUNT) {
       ret = common::OB_INVALID_ARGUMENT;
@@ -1984,25 +2064,53 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     const int64_t final_round_limit = final_merge ? merge_count_per_round_ : 1;
     int64_t round_id = 1;
     is_empty_ = false;
-    // transfer all the other curr rounds' iters to the first curr round
-    for (int i = 1; i < THREAD_NUM; ++i) {
-      curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
+    // // transfer all the other curr rounds' iters to the first curr round
+    // for (int i = 1; i < THREAD_NUM; ++i) {
+    //   curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
+    // }
+
+    int thread_idx_global = 0;
+    ObMutex mutex;
+    auto do_merge_thread = [this, &mutex, &thread_idx_global](){
+      int thread_idx;
+      mutex.lock();
+      thread_idx = thread_idx_global;
+      thread_idx_global++;
+      mutex.unlock();
+
+      this->curr_round_[thread_idx]->do_merge(*this->next_round_[thread_idx]);
+    };
+
+    MyThreadPool wpool;
+    wpool.set_run_wrapper(MTL_CTX());
+    wpool.set_func(do_merge_thread);
+    // start_ts = ObTimeUtility::current_time_ns();
+    // if (OB_FAIL(wpool.init(1, 1))) {
+    if (OB_FAIL(wpool.init(storage::THREAD_NUM, storage::THREAD_NUM))) {
+      LOG_WARN("fail to init get_and_write pool");
+      return ret;
+    }
+    wpool.wait();
+
+    // transfer all the other next rounds' iters to the first curr round
+    for (int i = 0; i < THREAD_NUM; ++i) {
+      next_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
     }
     while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
       const int64_t start_time = common::ObTimeUtility::current_time();
       STORAGE_LOG(INFO, "do sort start round", K(round_id));
       LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
-      if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
+      if (OB_FAIL(next_round_[0]->init(merge_count_per_round_, file_buf_size_,
           expire_timestamp_, tenant_id_, compare_))) {
         STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
       } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
         STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
+      } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_[0]))) {
         STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
       } else if (OB_FAIL(curr_round_[0]->clean_up())) {
         STORAGE_LOG(WARN, "fail to do clean up of current round", K(ret));
       } else {
-        std::swap(curr_round_[0], next_round_);
+        std::swap(curr_round_[0], next_round_[0]);
         const int64_t round_cost_time = common::ObTimeUtility::current_time() - start_time;
         STORAGE_LOG(INFO, "do sort end round", K(round_id), K(round_cost_time));
         ++round_id;
@@ -2054,9 +2162,9 @@ void ObExternalSort<T, Compare>::clean_up()
   for (int i = 0; i < THREAD_NUM; ++i) {
     memory_sort_round_[i].reset();
     curr_round_[i] = NULL;
+    next_round_[i] = NULL;
   }
   // curr_round_ = NULL;
-  next_round_ = NULL;
   is_empty_ = true;
   STORAGE_LOG(INFO, "do external sort clean up");
   for (int64_t i = 0; i < EXTERNAL_SORT_ROUND_CNT; ++i) {
