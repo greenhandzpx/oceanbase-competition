@@ -1971,6 +1971,7 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
   // transfer all the other memory sort rounds' data to the first one
   for (int i = 1; i < THREAD_NUM; ++i) {
     memory_sort_round_[i].transfer_all_items(memory_sort_round_[0]);
+    memory_sort_round_[i].reset();
   }
 
   if (OB_FAIL(memory_sort_round_[0].finish())) {
@@ -2002,6 +2003,7 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     // transfer all the other curr rounds' iters to the first curr round
     for (int i = 1; i < THREAD_NUM; ++i) {
       curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
+      curr_round_[i]->clean_up();
     }
     // while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
     //   const int64_t start_time = common::ObTimeUtility::current_time();
