@@ -89,6 +89,7 @@ public:
   ~ObLoadSequentialFileReader();
   int open(const ObString &filepath);
   int read_next_buffer(ObLoadDataBuffer &buffer);
+  void close() { file_reader_.close(); }
 private:
   common::ObFileReader file_reader_;
   int64_t offset_;
@@ -248,6 +249,8 @@ public:
 private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
+  int64_t max_primary_key = INT64_MIN;
+  int64_t min_primary_key = INT64_MAX;
 public:
   ObLoadCSVPaser csv_parser_[storage::THREAD_NUM];
   ObLoadSequentialFileReader file_reader_;
