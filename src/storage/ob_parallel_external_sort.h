@@ -231,6 +231,7 @@ int ObFragmentWriterV2<T>::open(const int64_t buf_size, const int64_t expire_tim
     ret = common::OB_INVALID_ARGUMENT;
     STORAGE_LOG(WARN, "invalid argument", K(ret), K(buf_size), K(expire_timestamp));
   } else {
+    allocator_.set_tenant_id(tenant_id);
     dir_id_ = dir_id;
     const int64_t align_buf_size = common::lower_align(buf_size, OB_SERVER_BLOCK_MGR.get_macro_block_size());
     if (NULL == (buf_ = static_cast<char *>(allocator_.alloc(align_buf_size)))) {
@@ -1082,6 +1083,7 @@ int ObExternalSortRound<T, Compare>::init(
   } else if (OB_FAIL(FILE_MANAGER_INSTANCE_V2.alloc_dir(dir_id_))) {
     STORAGE_LOG(WARN, "fail to alloc dir", K(ret));
   } else {
+    allocator_.set_tenant_id(tenant_id);
     is_inited_ = true;
     merge_count_ = merge_count;
     file_buf_size_ = file_buf_size;
@@ -1588,6 +1590,7 @@ int ObMemorySortRound<T, Compare>::init(
     STORAGE_LOG(WARN, "invalid arguments", K(ret), K(mem_limit), KP(compare),
         KP(next_round), "next round inited", next_round->is_inited());
   } else {
+    allocator_.set_tenant_id(1);
     is_inited_ = true;
     is_in_memory_ = false;
     has_data_ = false;
@@ -2000,26 +2003,26 @@ int ObExternalSort<T, Compare>::do_sort(const bool final_merge)
     for (int i = 1; i < THREAD_NUM; ++i) {
       curr_round_[i]->transfer_all_fragment_iters(*curr_round_[0]);
     }
-    while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
-      const int64_t start_time = common::ObTimeUtility::current_time();
-      STORAGE_LOG(INFO, "do sort start round", K(round_id));
-      LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
-      if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
-          expire_timestamp_, tenant_id_, compare_))) {
-        STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
-        STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
-        STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
-      } else if (OB_FAIL(curr_round_[0]->clean_up())) {
-        STORAGE_LOG(WARN, "fail to do clean up of current round", K(ret));
-      } else {
-        std::swap(curr_round_[0], next_round_);
-        const int64_t round_cost_time = common::ObTimeUtility::current_time() - start_time;
-        STORAGE_LOG(INFO, "do sort end round", K(round_id), K(round_cost_time));
-        ++round_id;
-      }
-    }
+    // while (OB_SUCC(ret) && !curr_round_[0]->is_final_round() && curr_round_[0]->get_fragment_count() > final_round_limit) {
+    //   const int64_t start_time = common::ObTimeUtility::current_time();
+    //   STORAGE_LOG(INFO, "do sort start round", K(round_id));
+    //   LOG_INFO("curr round iters count:", K(curr_round_[0]->get_fragment_count()));
+    //   if (OB_FAIL(next_round_->init(merge_count_per_round_, file_buf_size_,
+    //       expire_timestamp_, tenant_id_, compare_))) {
+    //     STORAGE_LOG(WARN, "fail to init next sort round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->set_total_row_num(total_row_num_))) {
+    //     STORAGE_LOG(WARN, "fail to set total row num of current round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->do_merge(*next_round_))) {
+    //     STORAGE_LOG(WARN, "fail to do merge fragments of current round", K(ret));
+    //   } else if (OB_FAIL(curr_round_[0]->clean_up())) {
+    //     STORAGE_LOG(WARN, "fail to do clean up of current round", K(ret));
+    //   } else {
+    //     std::swap(curr_round_[0], next_round_);
+    //     const int64_t round_cost_time = common::ObTimeUtility::current_time() - start_time;
+    //     STORAGE_LOG(INFO, "do sort end round", K(round_id), K(round_cost_time));
+    //     ++round_id;
+    //   }
+    // }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(curr_round_[0]->build_merger())) {
