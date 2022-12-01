@@ -614,12 +614,14 @@ int ObLoadExternalSort::init(const ObTableSchema *table_schema, int64_t mem_size
       LOG_WARN("fail to init datum utils", KR(ret));
     } else if (OB_FAIL(compare_.init(rowkey_column_num, &datum_utils_))) {
       LOG_WARN("fail to init compare", KR(ret));
-    } else if (OB_FAIL(external_sort_.init(mem_size, file_buf_size, 0, MTL_ID(), &compare_))) {
+    // } else if (OB_FAIL(external_sort_.init(mem_size, file_buf_size, 0, MTL_ID(), &compare_))) {
+    } else if (OB_FAIL(external_sort_.init(mem_size, file_buf_size, 0, 1, &compare_))) {
       LOG_WARN("fail to init external sort", KR(ret));
     } else {
       is_inited_ = true;
     }
   }
+  LOG_INFO("ext mtl id:", K(MTL_ID()));
   return ret;
 }
 
@@ -1294,12 +1296,19 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_global++;
     ob_mutex3.unlock();
 
+    int64_t do_sort_time = ObTimeUtility::current_time_ns();
     if (OB_FAIL(external_sort_[thread_idx_block_writer].close())) {
       LOG_WARN("fail to close external sort", KR(ret));
     }
+    do_sort_time = ObTimeUtility::current_time_ns() - do_sort_time;
+    LOG_INFO("thread idx:", K(thread_idx_block_writer));
+    LOG_INFO("do sort time(ns):", K(do_sort_time));
 
     int cnt = 0;
 
+
+    int64_t ext_get_next_row_time = 0;
+    int64_t sstable_append_row_time = 0;
     while (OB_SUCC(ret)) {
       // ob_mutex3.lock();
       if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
@@ -1315,6 +1324,7 @@ int ObLoadDataDirectDemo::do_load()
       //     break;
       //   }
       // }
+      int64_t start_ts = ObTimeUtility::current_time_ns();
       if (OB_FAIL(this->external_sort_[thread_idx_block_writer].get_next_row(datum_row))) {
         // ob_mutex3.unlock();
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
@@ -1324,6 +1334,8 @@ int ObLoadDataDirectDemo::do_load()
           break;
         }
       } else {
+        ext_get_next_row_time += ObTimeUtility::current_time_ns() - start_ts;
+        start_ts = ObTimeUtility::current_time_ns();
         cnt++;
         // if (cnt == 10 && thread_idx_block_writer != 1) {
         //   break;
@@ -1333,9 +1345,13 @@ int ObLoadDataDirectDemo::do_load()
         if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));
         }
+        sstable_append_row_time += ObTimeUtility::current_time_ns() - start_ts;
         // ob_mutex3.unlock();
       }
     }
+    LOG_INFO("thread idx", K(thread_idx_block_writer));
+    LOG_INFO("ext get next row time(ns)", K(ext_get_next_row_time));
+    LOG_INFO("sstable append row time(ns)", K(sstable_append_row_time));
     this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
     delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
   };
