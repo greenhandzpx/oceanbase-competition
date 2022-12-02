@@ -1042,56 +1042,56 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     }
   }
 
-//  // 采样统计
-//   ObLoadDataBuffer buf;
-//   buf.create(FILE_BUFFER_SIZE);
-//   ObLoadSequentialFileReader freader;
-//   const ObNewRow *new_row = nullptr;
-//   const ObLoadDatumRow *datum_row = nullptr;
-//   freader.open(load_args.full_file_path_);
-//   for (int i = 0; i < sampling_scale; ++i) {
-//     if (OB_FAIL(buf.squash())) {
-//       LOG_WARN("fail to squash buffer", KR(ret));
-//     } else if (OB_FAIL(freader.read_next_buffer(buf))) {
-//       if (OB_UNLIKELY(OB_ITER_END != ret)) {
-//         LOG_WARN("fail to read next buffer", KR(ret));
-//       } else {
-//         if (OB_UNLIKELY(buf.empty())) {
-//           LOG_WARN("unexpected incomplate data", KR(ret));
-//         }
-//         // ret_global = ret;
-//         ret = OB_SUCCESS;
-//       }
-//     } else if (OB_UNLIKELY(buf.empty())) {
-//       ret = OB_ERR_UNEXPECTED;
-//       LOG_WARN("unexpected empty buffer", KR(ret));
-//     } else {
-//       while (OB_SUCC(ret)) {
-//         if (OB_FAIL(this->csv_parser_[0].get_next_row(buf, new_row))) {
-//           if (OB_UNLIKELY(OB_ITER_END != ret)) {
-//             LOG_WARN("fail to get next row", KR(ret));
-//           } else {
-//             ret = OB_SUCCESS;
-//             break;
-//           }
-//         } else {
-//           if (OB_FAIL(this->row_caster_[0].get_casted_row(*new_row, datum_row))) {
-//             LOG_WARN("fail to cast row", KR(ret));
-//             break;
-//           } else {
-//             int64_t primary_key = *datum_row->datums_[0].int_;
-//             if (primary_key > max_primary_key_) {
-//               max_primary_key_ = primary_key;
-//             }
-//             if (primary_key < min_primary_key_) {
-//               min_primary_key_ = primary_key;
-//             }
-//           }
-//         }
-//       }
-//     }
-//   }
-//   freader.close();
+ // 采样统计
+  ObLoadDataBuffer buf;
+  buf.create(FILE_BUFFER_SIZE);
+  ObLoadSequentialFileReader freader;
+  const ObNewRow *new_row = nullptr;
+  const ObLoadDatumRow *datum_row = nullptr;
+  freader.open(load_args.full_file_path_);
+  for (int i = 0; i < sampling_scale; ++i) {
+    if (OB_FAIL(buf.squash())) {
+      LOG_WARN("fail to squash buffer", KR(ret));
+    } else if (OB_FAIL(freader.read_next_buffer(buf))) {
+      if (OB_UNLIKELY(OB_ITER_END != ret)) {
+        LOG_WARN("fail to read next buffer", KR(ret));
+      } else {
+        if (OB_UNLIKELY(buf.empty())) {
+          LOG_WARN("unexpected incomplate data", KR(ret));
+        }
+        // ret_global = ret;
+        ret = OB_SUCCESS;
+      }
+    } else if (OB_UNLIKELY(buf.empty())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected empty buffer", KR(ret));
+    } else {
+      while (OB_SUCC(ret)) {
+        if (OB_FAIL(this->csv_parser_[0].get_next_row(buf, new_row))) {
+          if (OB_UNLIKELY(OB_ITER_END != ret)) {
+            LOG_WARN("fail to get next row", KR(ret));
+          } else {
+            ret = OB_SUCCESS;
+            break;
+          }
+        } else {
+          if (OB_FAIL(this->row_caster_[0].get_casted_row(*new_row, datum_row))) {
+            LOG_WARN("fail to cast row", KR(ret));
+            break;
+          } else {
+            int64_t primary_key = *datum_row->datums_[0].int_;
+            if (primary_key > max_primary_key_) {
+              max_primary_key_ = primary_key;
+            }
+            if (primary_key < min_primary_key_) {
+              min_primary_key_ = primary_key;
+            }
+          }
+        }
+      }
+    }
+  }
+  freader.close();
 
   // init file_reader_
   if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
@@ -1162,8 +1162,8 @@ int ObLoadDataDirectDemo::do_load()
     ob_mutex1.unlock();
 
     // int64_t bucket_interval = max_primary_key / storage::EXTERNAL_SORT_BUCKET_NUM;
-    max_primary_key_ = 300000000;
-    min_primary_key_ = 0;
+    // max_primary_key_ = 300000000;
+    // min_primary_key_ = 0;
     int64_t bucket_interval = this->max_primary_key_ / storage::EXTERNAL_SORT_BUCKET_NUM - this->min_primary_key_ / storage::EXTERNAL_SORT_BUCKET_NUM;
     LOG_INFO("ccc bucket_interval", KR(max_primary_key_), KR(min_primary_key_), KR(bucket_interval));
 
