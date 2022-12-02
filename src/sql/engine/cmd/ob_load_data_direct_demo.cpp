@@ -1430,10 +1430,13 @@ int ObLoadDataDirectDemo::do_load()
         // ob_mutex3.unlock();
       }
     }
+
+
+    this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
+
     LOG_INFO("thread idx", K(thread_idx_block_writer));
     LOG_INFO("ext get next row time(ns)", K(ext_get_next_row_time));
     LOG_INFO("sstable append row time(ns)", K(sstable_append_row_time));
-    this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
     LOG_INFO("macro block writer finish", K(thread_idx_block_writer));
     delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
   };

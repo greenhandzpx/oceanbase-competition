@@ -526,6 +526,7 @@ int ObFragmentReaderV2<T>::init(const int64_t fd, const int64_t dir_id, const in
             sample_item, buf, buf_len, pos))) {
       STORAGE_LOG(WARN, "failed to deep copy item", K(ret));
     } else {
+      allocator_.set_tenant_id(1);
       expire_timestamp_ = expire_timestamp;
       handle_cursor_ = 0;
       fd_ = fd;
