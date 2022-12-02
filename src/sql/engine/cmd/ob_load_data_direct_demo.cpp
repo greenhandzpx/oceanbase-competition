@@ -1125,8 +1125,8 @@ int ObLoadDataDirectDemo::do_load()
         LOG_WARN("unexpected empty buffer", KR(ret));
         ob_mutex1.unlock();
       } else {
-        LOG_INFO("read next buffer successfully");
-        LOG_INFO("thread idx", LITERAL_K(thread_idx));
+        // LOG_INFO("read next buffer successfully");
+        // LOG_INFO("thread idx", LITERAL_K(thread_idx));
 
         ob_mutex1.unlock();
 
@@ -1317,7 +1317,7 @@ int ObLoadDataDirectDemo::do_load()
         break;
       }
       if (this->external_sort_[thread_idx_block_writer].is_empty()) {
-        return;
+        break;
       }
       // if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
       //   if (thread_idx_block_writer != 0) {
@@ -1330,6 +1330,7 @@ int ObLoadDataDirectDemo::do_load()
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
           LOG_WARN("fail to get next row", KR(ret));
         } else {
+          LOG_INFO("external sort has reached iter end", K(thread_idx_block_writer));
           ret = OB_SUCCESS;
           break;
         }
@@ -1337,6 +1338,7 @@ int ObLoadDataDirectDemo::do_load()
         ext_get_next_row_time += ObTimeUtility::current_time_ns() - start_ts;
         start_ts = ObTimeUtility::current_time_ns();
         cnt++;
+        // LOG_INFO("ext get next row", K(cnt));
         // if (cnt == 10 && thread_idx_block_writer != 1) {
         //   break;
         // }
@@ -1345,6 +1347,7 @@ int ObLoadDataDirectDemo::do_load()
         if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));
         }
+        // LOG_INFO("sstable append a row", K(thread_idx_block_writer));
         sstable_append_row_time += ObTimeUtility::current_time_ns() - start_ts;
         // ob_mutex3.unlock();
       }
@@ -1353,6 +1356,7 @@ int ObLoadDataDirectDemo::do_load()
     LOG_INFO("ext get next row time(ns)", K(ext_get_next_row_time));
     LOG_INFO("sstable append row time(ns)", K(sstable_append_row_time));
     this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
+    LOG_INFO("macro block writer finish", K(thread_idx_block_writer));
     delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
   };
 
