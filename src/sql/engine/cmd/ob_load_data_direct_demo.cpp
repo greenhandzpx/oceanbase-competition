@@ -28,8 +28,8 @@ using namespace observer;
 using namespace share;
 using namespace share::schema;
 
-
-const int64_t max_primary_key = 300000000;
+const int sampling_scale = 20;
+// const int64_t max_primary_key = 300000000;
 // const int64_t max_primary_key = 6000000;
 
 /**
@@ -1001,25 +1001,26 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     LOG_WARN("not support heap table", KR(ret));
     return ret;
   }
-  // init file_reader_
-  else if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
-    LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
-  }
-  // // init external_sort_
-  // else if (OB_FAIL(external_sort_.init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
-  //   LOG_WARN("fail to init row caster", KR(ret));
+  // // init file_reader_
+  // else if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
+  //   LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
   // }
-  // init sstable_writer_
-  else if (OB_FAIL(sstable_writer_.init(table_schema_))) {
-    LOG_WARN("fail to init sstable writer", KR(ret));
-  }
+  // // // init external_sort_
+  // // else if (OB_FAIL(external_sort_.init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+  // //   LOG_WARN("fail to init row caster", KR(ret));
+  // // }
+  // // init sstable_writer_
+  // else if (OB_FAIL(sstable_writer_.init(table_schema_))) {
+  //   LOG_WARN("fail to init sstable writer", KR(ret));
+  // }
 
-  for (int i = 0; i < storage::EXTERNAL_SORT_BUCKET_NUM; ++i) {
-    if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
-      LOG_WARN("fail to init external sort", KR(ret));
-      return ret;
-    }
-  }
+  // for (int i = 0; i < storage::EXTERNAL_SORT_BUCKET_NUM; ++i) {
+  //   // init external sort
+  //   if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+  //     LOG_WARN("fail to init external sort", KR(ret));
+  //     return ret;
+  //   }
+  // }
 
 
   for (int i = 0; i < storage::THREAD_NUM; ++i) {
@@ -1041,7 +1042,76 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     }
   }
 
+ // 采样统计
+  ObLoadDataBuffer buf;
+  buf.create(FILE_BUFFER_SIZE);
+  ObLoadSequentialFileReader freader;
+  const ObNewRow *new_row = nullptr;
+  const ObLoadDatumRow *datum_row = nullptr;
+  freader.open(load_args.full_file_path_);
+  for (int i = 0; i < sampling_scale; ++i) {
+    if (OB_FAIL(buf.squash())) {
+      LOG_WARN("fail to squash buffer", KR(ret));
+    } else if (OB_FAIL(freader.read_next_buffer(buf))) {
+      if (OB_UNLIKELY(OB_ITER_END != ret)) {
+        LOG_WARN("fail to read next buffer", KR(ret));
+      } else {
+        if (OB_UNLIKELY(buf.empty())) {
+          LOG_WARN("unexpected incomplate data", KR(ret));
+        }
+        // ret_global = ret;
+        ret = OB_SUCCESS;
+      }
+    } else if (OB_UNLIKELY(buf.empty())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected empty buffer", KR(ret));
+    } else {
+      while (OB_SUCC(ret)) {
+        if (OB_FAIL(this->csv_parser_[0].get_next_row(buf, new_row))) {
+          if (OB_UNLIKELY(OB_ITER_END != ret)) {
+            LOG_WARN("fail to get next row", KR(ret));
+          } else {
+            ret = OB_SUCCESS;
+            break;
+          }
+        } else {
+          if (OB_FAIL(this->row_caster_[0].get_casted_row(*new_row, datum_row))) {
+            LOG_WARN("fail to cast row", KR(ret));
+            break;
+          } else {
+            int64_t primary_key = *datum_row->datums_[0].int_;
+            if (primary_key > max_primary_key_) {
+              max_primary_key_ = primary_key;
+            }
+            if (primary_key < min_primary_key_) {
+              min_primary_key_ = primary_key;
+            }
+          }
+        }
+      }
+    }
+  }
+  freader.close();
+  // init file_reader_
+  if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
+    LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
+  }
+  // // init external_sort_
+  // else if (OB_FAIL(external_sort_.init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+  //   LOG_WARN("fail to init row caster", KR(ret));
+  // }
+  // init sstable_writer_
+  else if (OB_FAIL(sstable_writer_.init(table_schema_))) {
+    LOG_WARN("fail to init sstable writer", KR(ret));
+  }
 
+  for (int i = 0; i < storage::EXTERNAL_SORT_BUCKET_NUM; ++i) {
+    if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+      LOG_WARN("fail to init external sort", KR(ret));
+      return ret;
+    }
+  }
+  return ret;
   // // init csv_parser_
   // else if (OB_FAIL(csv_parser_.init(load_stmt.get_data_struct_in_file(), field_or_var_list_->count(),
   //                                   load_args.file_cs_type_))) {
@@ -1090,7 +1160,10 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_global++;
     ob_mutex1.unlock();
 
-    int64_t bucket_interval = max_primary_key / storage::EXTERNAL_SORT_BUCKET_NUM;
+    // int64_t bucket_interval = max_primary_key / storage::EXTERNAL_SORT_BUCKET_NUM;
+    int64_t bucket_interval = this->max_primary_key_ / storage::EXTERNAL_SORT_BUCKET_NUM - this->min_primary_key_ / storage::EXTERNAL_SORT_BUCKET_NUM;
+    LOG_INFO("ccc bucket_interval", KR(max_primary_key_), KR(min_primary_key_), KR(bucket_interval));
+
 
     while (true) {
       ob_mutex1.lock();
@@ -1162,11 +1235,13 @@ int ObLoadDataDirectDemo::do_load()
               int64_t primary_key = *datum_row->datums_[0].int_;
 
               // LOG_INFO("primary key:", K(primary_key));
-
-              int idx = primary_key / bucket_interval; 
+              // int idx = primary_key / bucket_interval; 
+              int idx = (primary_key - this->min_primary_key_) / bucket_interval; 
 
               if (idx >= storage::EXTERNAL_SORT_BUCKET_NUM) {
                 idx = storage::EXTERNAL_SORT_BUCKET_NUM - 1;
+              } else if (idx < 0) {
+                idx = 0;
               }
 
               if (OB_FAIL(this->external_sort_[idx].append_row(*datum_row))) {
