@@ -7,7 +7,7 @@
 #include "storage/blocksstable/ob_index_block_builder.h"
 #include "storage/ob_parallel_external_sort.h"
 #include "storage/tx_storage/ob_ls_handle.h"
-
+#include "lib/lock/ob_mutex.h"
 
 
 
@@ -205,6 +205,9 @@ private:
   storage::ObExternalSort<ObLoadDatumRow, ObLoadDatumRowCompare> external_sort_;
   bool is_closed_;
   bool is_inited_;
+public:
+  ObMutex bucket_mutex_;
+
 };
 
 class ObLoadSSTableWriter
@@ -240,9 +243,9 @@ public:
 class ObLoadDataDirectDemo : public ObLoadDataBase
 {
   // static const int64_t MEM_BUFFER_SIZE = (1LL << 29); // 1G / 2
-  static const int64_t MEM_BUFFER_SIZE = (1LL << 28); // 1G / 4
+  static const int64_t MEM_BUFFER_SIZE = (1LL << 28 + 1LL << 25); // 256 + 32
   // static const int64_t MEM_BUFFER_SIZE = (1LL << 27); // 1G / 8
-  // static const int64_t FILE_BUFFER_SIZE = (1LL << 20); // 2M
+  // static const int64_t FILE_BUFFER_SIZE = (1LL << 20); // 1M
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20); // 2M
 public:
   ObLoadDataDirectDemo();

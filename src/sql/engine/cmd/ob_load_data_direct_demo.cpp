@@ -1156,6 +1156,9 @@ int ObLoadDataDirectDemo::do_load()
 
     int thread_idx;
     ob_mutex1.lock();
+    // if (thread_idx_global % 2 == 0) {
+    //   thread_idx_external_sort = thread_idx_global;
+    // }
     thread_idx_external_sort = thread_idx_global;
     thread_idx = thread_idx_global;
     thread_idx_global++;
@@ -1247,6 +1250,7 @@ int ObLoadDataDirectDemo::do_load()
                 idx = 0;
               }
 
+              // this->external_sort_[idx].bucket_mutex_[thread_idx_external_sort].lock();
               if (OB_FAIL(this->external_sort_[idx].append_row(*datum_row))) {
                 LOG_WARN("fail to append row", KR(ret));
                 // ob_mutex2.unlock();
@@ -1256,6 +1260,7 @@ int ObLoadDataDirectDemo::do_load()
               // } else {
                 // ob_mutex2.unlock();
               }
+              // this->external_sort_[idx].bucket_mutex_[thread_idx_external_sort].unlock();
               append_time += ObTimeUtility::current_time_ns() - e_st_ts;
             }
           }
@@ -1292,70 +1297,12 @@ int ObLoadDataDirectDemo::do_load()
 
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
-  // while (OB_SUCC(ret)) {
-  //   if (OB_FAIL(buffer_.squash())) {
-  //     LOG_WARN("fail to squash buffer", KR(ret));
-  //   } else if (OB_FAIL(file_reader_.read_next_buffer(buffer_))) {
-  //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //       LOG_WARN("fail to read next buffer", KR(ret));
-  //     } else {
-  //       if (OB_UNLIKELY(!buffer_.empty())) {
-  //         ret = OB_ERR_UNEXPECTED;
-  //         LOG_WARN("unexpected incomplate data", KR(ret));
-  //       }
-  //       ret = OB_SUCCESS;
-  //       break;
-  //     }
-  //   } else if (OB_UNLIKELY(buffer_.empty())) {
-  //     ret = OB_ERR_UNEXPECTED;
-  //     LOG_WARN("unexpected empty buffer", KR(ret));
-  //   } else {
-  //     while (OB_SUCC(ret)) {
-  //       if (OB_FAIL(csv_parser_.get_next_row(buffer_, new_row))) {
-  //         if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //           LOG_WARN("fail to get next row", KR(ret));
-  //         } else {
-  //           ret = OB_SUCCESS;
-  //           break;
-  //         }
-  //       } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
-  //         LOG_WARN("fail to cast row", KR(ret));
-  //       } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
-  //         LOG_WARN("fail to append row", KR(ret));
-  //       }
-  //     }
-  //   }
-  // }
+
+
 
   int64_t get_row_time = 0;
   int64_t sstable_time = 0;
-  // if (OB_SUCC(ret)) {
-  //   LOG_INFO("start to close external sort");
-  //   int64_t start_ts = ObTimeUtility::current_time_ns();
-  //   if (OB_FAIL(external_sort_.close())) {
-  //     LOG_WARN("fail to close external sort", KR(ret));
-  //   }
-  //   start_ts = (ObTimeUtility::current_time_ns() - start_ts);
-  //   LOG_INFO("do sort time(ns):", LITERAL_K(start_ts));
-  // }
-  // while (OB_SUCC(ret)) {
-  //   int64_t start_ts = ObTimeUtility::current_time_ns();
-  //   if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
-  //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
-  //       LOG_WARN("fail to get next row", KR(ret));
-  //     } else {
-  //       ret = OB_SUCCESS;
-  //       break;
-  //     }
-  //   } else {
-  //     get_row_time += ObTimeUtility::current_time_ns() - start_ts;
-  //     start_ts = ObTimeUtility::current_time_ns();
-  //     if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
-  //       LOG_WARN("fail to append row", KR(ret));
-  //     }
-  //     sstable_time += ObTimeUtility::current_time_ns() - start_ts;
-  //   }
-  // }
+
 
   thread_idx_global = 0;
   ret_global = common::OB_SUCCESS;
