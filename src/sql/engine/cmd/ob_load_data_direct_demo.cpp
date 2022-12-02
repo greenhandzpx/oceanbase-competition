@@ -28,7 +28,7 @@ using namespace observer;
 using namespace share;
 using namespace share::schema;
 
-const int sampling_scale = 20;
+const int sampling_scale = 2;
 // const int64_t max_primary_key = 300000000;
 // const int64_t max_primary_key = 6000000;
 
@@ -525,7 +525,7 @@ int ObLoadRowCaster::get_casted_row(const ObNewRow &new_row, const ObLoadDatumRo
     ret = OB_NOT_INIT;
     LOG_WARN("ObLoadRowCaster not init", KR(ret));
   } else {
-    const int64_t extra_col_cnt = ObMultiVersionRowkeyHelpper::get_extra_rowkey_col_cnt();
+    // const int64_t extra_col_cnt = ObMultiVersionRowkeyHelpper::get_extra_rowkey_col_cnt();
     cast_allocator_.reuse();
     for (int64_t i = 0; OB_SUCC(ret) && i < column_idxs_.count(); ++i) {
       int64_t column_idx = column_idxs_.at(i);
@@ -1092,6 +1092,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     }
   }
   freader.close();
+
   // init file_reader_
   if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
     LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
@@ -1256,7 +1257,6 @@ int ObLoadDataDirectDemo::do_load()
               append_time += ObTimeUtility::current_time_ns() - e_st_ts;
             }
           }
-
         }
       }
     }
@@ -1287,7 +1287,6 @@ int ObLoadDataDirectDemo::do_load()
   pca_time = ObTimeUtility::current_time_ns() - start_ts;
   LOG_INFO("pca time(ns):", LITERAL_K(pca_time));
 
-  const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
   // while (OB_SUCC(ret)) {
   //   if (OB_FAIL(buffer_.squash())) {
@@ -1361,8 +1360,6 @@ int ObLoadDataDirectDemo::do_load()
   auto get_and_write = [&thread_idx_global, &ret_global, &ob_mutex3, this](){
     int ret = OB_SUCCESS;
 
-
-    const ObNewRow *new_row = nullptr;
     const ObLoadDatumRow *datum_row = nullptr;
 
     ob_mutex3.lock();

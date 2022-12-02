@@ -37,9 +37,9 @@ extern thread_local int thread_idx_block_writer;
 namespace storage
 {
 
-const int THREAD_NUM = 4;
-const int THREAD_NUM_FINAL_MERGE = 4;
-const int EXTERNAL_SORT_BUCKET_NUM = 4;
+const int THREAD_NUM = 8;
+const int THREAD_NUM_FINAL_MERGE = 8;
+const int EXTERNAL_SORT_BUCKET_NUM = 8;
 
 struct ObExternalSortConstant
 {
@@ -1660,7 +1660,8 @@ int ObMemorySortRound<T, Compare>::build_fragment()
     }
 
     start = common::ObTimeUtility::current_time();
-    for (int64_t i = 0; OB_SUCC(ret) && i < item_list_.size(); ++i) {
+    int64_t size = item_list_.size();
+    for (int64_t i = 0; OB_SUCC(ret) && i < size; ++i) {
       if (OB_FAIL(next_round_->add_item(*item_list_.at(i)))) {
         STORAGE_LOG(WARN, "fail to add item", K(ret));
       }
