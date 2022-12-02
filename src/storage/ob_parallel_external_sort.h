@@ -37,9 +37,9 @@ extern thread_local int thread_idx_block_writer;
 namespace storage
 {
 
-const int THREAD_NUM = 8;
-const int THREAD_NUM_FINAL_MERGE = 8;
-const int EXTERNAL_SORT_BUCKET_NUM = 8;
+const int THREAD_NUM = 16;
+const int THREAD_NUM_FINAL_MERGE = 16;
+const int EXTERNAL_SORT_BUCKET_NUM = 16;
 
 struct ObExternalSortConstant
 {
@@ -1948,7 +1948,7 @@ int ObExternalSort<T, Compare>::add_item(const T &item)
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
     STORAGE_LOG(WARN, "ObExternalSort has not been inited", K(ret));
-  } else if (OB_FAIL(memory_sort_round_[thread_idx_external_sort].add_item(item))) {
+  } else if (OB_FAIL(memory_sort_round_[0].add_item(item))) {
     STORAGE_LOG(WARN, "fail to add item in memory sort round", K(ret));
   }
   // total_row_num_++;

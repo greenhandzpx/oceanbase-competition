@@ -627,6 +627,7 @@ int ObLoadExternalSort::init(const ObTableSchema *table_schema, int64_t mem_size
 
 int ObLoadExternalSort::append_row(const ObLoadDatumRow &datum_row)
 {
+  mtx.lock();
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
     ret = OB_NOT_INIT;
@@ -637,6 +638,7 @@ int ObLoadExternalSort::append_row(const ObLoadDatumRow &datum_row)
   } else if (OB_FAIL(external_sort_.add_item(datum_row))) {
     LOG_WARN("fail to add item", KR(ret));
   }
+  mtx.unlock();
   return ret;
 }
 

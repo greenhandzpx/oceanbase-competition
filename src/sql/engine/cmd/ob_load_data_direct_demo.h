@@ -205,6 +205,7 @@ private:
   storage::ObExternalSort<ObLoadDatumRow, ObLoadDatumRowCompare> external_sort_;
   bool is_closed_;
   bool is_inited_;
+  ObMutex mtx;
 };
 
 class ObLoadSSTableWriter
@@ -239,7 +240,7 @@ public:
 
 class ObLoadDataDirectDemo : public ObLoadDataBase
 {
-  static const int64_t MEM_BUFFER_SIZE = (1LL << 28); // 1G / 4
+  static const int64_t MEM_BUFFER_SIZE = (1LL << 29); // 1G / 4
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20); // 2M
 public:
   ObLoadDataDirectDemo();
