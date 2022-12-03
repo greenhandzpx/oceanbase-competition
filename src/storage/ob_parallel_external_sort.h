@@ -367,7 +367,8 @@ void ObFragmentWriterV2<T>::reset()
   buf_ = NULL;
   buf_size_ = 0;
   expire_timestamp_ = 0;
-  allocator_.reuse();
+  // allocator_.reuse();
+  allocator_.reset();
   macro_buffer_writer_.assign(0, 0, NULL);
   has_sample_item_ = false;
   file_io_handle_.reset();
