@@ -1369,69 +1369,72 @@ int ObLoadDataDirectDemo::do_load()
     thread_idx_block_writer = thread_idx_global;
     thread_idx_global++;
     ob_mutex3.unlock();
-
-    int64_t do_sort_time = ObTimeUtility::current_time_ns();
-    if (OB_FAIL(external_sort_[thread_idx_block_writer].close())) {
-      LOG_WARN("fail to close external sort", KR(ret));
-    }
-    do_sort_time = ObTimeUtility::current_time_ns() - do_sort_time;
-    LOG_INFO("thread idx:", K(thread_idx_block_writer));
-    LOG_INFO("do sort time(ns):", K(do_sort_time));
-
-    int cnt = 0;
-
-
-    int64_t ext_get_next_row_time = 0;
-    int64_t sstable_append_row_time = 0;
-    while (OB_SUCC(ret)) {
-      // ob_mutex3.lock();
-      if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
-      // if (!OB_SUCC(ret_global)) {
-        // ob_mutex3.unlock();
-        break;
+    int start_idx = thread_idx_block_writer * 4;
+    for (int i = start_idx; i < start_idx + 4; ++i) {
+      int64_t do_sort_time = ObTimeUtility::current_time_ns();
+      if (OB_FAIL(external_sort_[i].close())) {
+        LOG_WARN("fail to close external sort", KR(ret));
       }
-      if (this->external_sort_[thread_idx_block_writer].is_empty()) {
-        break;
-      }
-      // if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
-      //   if (thread_idx_block_writer != 0) {
-      //     break;
-      //   }
-      // }
-      int64_t start_ts = ObTimeUtility::current_time_ns();
-      if (OB_FAIL(this->external_sort_[thread_idx_block_writer].get_next_row(datum_row))) {
-        // ob_mutex3.unlock();
-        if (OB_UNLIKELY(OB_ITER_END != ret)) {
-          LOG_WARN("fail to get next row", KR(ret));
-        } else {
-          LOG_INFO("external sort has reached iter end", K(thread_idx_block_writer));
-          ret = OB_SUCCESS;
+      do_sort_time = ObTimeUtility::current_time_ns() - do_sort_time;
+      LOG_INFO("thread idx:", K(i));
+      LOG_INFO("do sort time(ns):", K(do_sort_time));
+
+      int cnt = 0;
+
+
+      int64_t ext_get_next_row_time = 0;
+      int64_t sstable_append_row_time = 0;
+      while (OB_SUCC(ret)) {
+        // ob_mutex3.lock();
+        if (!OB_SUCC(ret) || !OB_SUCC(ret_global)) {
+        // if (!OB_SUCC(ret_global)) {
+          // ob_mutex3.unlock();
           break;
         }
-      } else {
-        ext_get_next_row_time += ObTimeUtility::current_time_ns() - start_ts;
-        start_ts = ObTimeUtility::current_time_ns();
-        cnt++;
-        // LOG_INFO("ext get next row", K(cnt));
-        // if (cnt == 10 && thread_idx_block_writer != 1) {
-        //   break;
-        // }
-        // ob_mutex3.unlock();
-        // ob_mutex3.lock();
-        if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
-          LOG_WARN("fail to append row", KR(ret));
+        if (this->external_sort_[i].is_empty()) {
+          break;
         }
-        // LOG_INFO("sstable append a row", K(thread_idx_block_writer));
-        sstable_append_row_time += ObTimeUtility::current_time_ns() - start_ts;
-        // ob_mutex3.unlock();
+        // if (!this->external_sort_[thread_idx_block_writer].is_empty() && this->external_sort_[thread_idx_block_writer].is_in_memory()) {
+        //   if (thread_idx_block_writer != 0) {
+        //     break;
+        //   }
+        // }
+        int64_t start_ts = ObTimeUtility::current_time_ns();
+        if (OB_FAIL(this->external_sort_[i].get_next_row(datum_row))) {
+          // ob_mutex3.unlock();
+          if (OB_UNLIKELY(OB_ITER_END != ret)) {
+            LOG_WARN("fail to get next row", KR(ret));
+          } else {
+            LOG_INFO("external sort has reached iter end", K(i));
+            ret = OB_SUCCESS;
+            break;
+          }
+        } else {
+          ext_get_next_row_time += ObTimeUtility::current_time_ns() - start_ts;
+          start_ts = ObTimeUtility::current_time_ns();
+          cnt++;
+          // LOG_INFO("ext get next row", K(cnt));
+          // if (cnt == 10 && thread_idx_block_writer != 1) {
+          //   break;
+          // }
+          // ob_mutex3.unlock();
+          // ob_mutex3.lock();
+          if (OB_FAIL(this->sstable_writer_.append_row(*datum_row))) {
+            LOG_WARN("fail to append row", KR(ret));
+          }
+          // LOG_INFO("sstable append a row", K(thread_idx_block_writer));
+          sstable_append_row_time += ObTimeUtility::current_time_ns() - start_ts;
+          // ob_mutex3.unlock();
+        }
       }
+      LOG_INFO("bucket idx", K(i));
+      LOG_INFO("ext get next row time(ns)", K(ext_get_next_row_time));
+      LOG_INFO("sstable append row time(ns)", K(sstable_append_row_time));
     }
-    LOG_INFO("thread idx", K(thread_idx_block_writer));
-    LOG_INFO("ext get next row time(ns)", K(ext_get_next_row_time));
-    LOG_INFO("sstable append row time(ns)", K(sstable_append_row_time));
     this->sstable_writer_.macro_block_writer_[thread_idx_block_writer]->close();
     LOG_INFO("macro block writer finish", K(thread_idx_block_writer));
     delete this->sstable_writer_.macro_block_writer_[thread_idx_block_writer];
+
   };
 
   MyThreadPool wpool;
@@ -1442,7 +1445,7 @@ int ObLoadDataDirectDemo::do_load()
 
   start_ts = ObTimeUtility::current_time_ns();
   // if (OB_FAIL(wpool.init(1, 1))) {
-  if (OB_FAIL(wpool.init(storage::EXTERNAL_SORT_BUCKET_NUM, storage::EXTERNAL_SORT_BUCKET_NUM))) {
+  if (OB_FAIL(wpool.init(storage::SSTABLE_WRITER_NUM, storage::SSTABLE_WRITER_NUM))) {
     LOG_WARN("fail to init get_and_write pool");
     return ret;
   }

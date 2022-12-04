@@ -37,9 +37,10 @@ extern thread_local int thread_idx_block_writer;
 namespace storage
 {
 
-const int THREAD_NUM = 16;
-const int THREAD_NUM_FINAL_MERGE = 16;
-const int EXTERNAL_SORT_BUCKET_NUM = 16;
+const int THREAD_NUM = 12;
+const int THREAD_NUM_FINAL_MERGE = 8;
+const int EXTERNAL_SORT_BUCKET_NUM = 32;
+const int SSTABLE_WRITER_NUM = 8;
 
 struct ObExternalSortConstant
 {
